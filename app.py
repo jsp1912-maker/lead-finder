@@ -106,8 +106,9 @@ def _load_leads_unsafe(user_id=None):
             with open(DATA_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
         return []
-    rows = Lead.query.filter_by(user_id=user_id).order_by(Lead.created_at.desc()).all()
-    return [row.data for row in rows]
+    with app.app_context():
+        rows = Lead.query.filter_by(user_id=user_id).order_by(Lead.created_at.desc()).all()
+        return [row.data for row in rows]
 
 
 def _save_leads_unsafe(leads, user_id=None):
@@ -116,18 +117,19 @@ def _save_leads_unsafe(leads, user_id=None):
         with open(DATA_FILE, "w", encoding="utf-8") as f:
             json.dump(slim, f, ensure_ascii=False, indent=2)
         return
-    existing_ids = {row.id: row for row in Lead.query.filter_by(user_id=user_id).all()}
-    new_ids = {l["id"] for l in leads}
-    for lead_id in list(existing_ids.keys()):
-        if lead_id not in new_ids:
-            db.session.delete(existing_ids[lead_id])
-    for lead in leads:
-        slim = {k: v for k, v in lead.items() if k != "cold_email"}
-        if lead["id"] in existing_ids:
-            existing_ids[lead["id"]].data = slim
-        else:
-            db.session.add(Lead(id=lead["id"], user_id=user_id, data=slim))
-    db.session.commit()
+    with app.app_context():
+        existing_ids = {row.id: row for row in Lead.query.filter_by(user_id=user_id).all()}
+        new_ids = {l["id"] for l in leads}
+        for lead_id in list(existing_ids.keys()):
+            if lead_id not in new_ids:
+                db.session.delete(existing_ids[lead_id])
+        for lead in leads:
+            slim = {k: v for k, v in lead.items() if k != "cold_email"}
+            if lead["id"] in existing_ids:
+                existing_ids[lead["id"]].data = slim
+            else:
+                db.session.add(Lead(id=lead["id"], user_id=user_id, data=slim))
+        db.session.commit()
 
 
 def load_leads(user_id=None):
