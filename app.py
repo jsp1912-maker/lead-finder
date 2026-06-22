@@ -44,6 +44,7 @@ EMAIL_TEMPLATES = {
 
 jobs = {}
 _leads_lock = threading.Lock()
+_job_executor = ThreadPoolExecutor(max_workers=4)
 
 SPORT_KEYWORDS = ["voetbal", "hockey", "padel", "tennis", "basketbal", "volleybal",
                   "handbal", "zwemclub", "atletiek", "rugby", "cricket", "badminton"]
@@ -1248,7 +1249,7 @@ def search():
     if not niche:
         return jsonify({"error": "Vul een naam of niche in"}), 400
     job_id = str(uuid.uuid4())
-    threading.Thread(target=run_search_job, args=(job_id, niche, city, max_results, force_type, radius), daemon=True).start()
+    _job_executor.submit(run_search_job, job_id, niche, city, max_results, force_type, radius)
     return jsonify({"job_id": job_id})
 
 
@@ -1260,7 +1261,7 @@ def events_search():
     if not city:
         return jsonify({"error": "Vul een stad in"}), 400
     job_id = str(uuid.uuid4())
-    threading.Thread(target=run_events_job, args=(job_id, city, max_results), daemon=True).start()
+    _job_executor.submit(run_events_job, job_id, city, max_results)
     return jsonify({"job_id": job_id})
 
 
@@ -1679,8 +1680,7 @@ def add_manual_lead():
 
     job_id = str(uuid.uuid4())
     jobs[job_id] = {"status": "running", "progress": 0, "message": "Starten...", "count": 0}
-    thread = threading.Thread(target=run_manual_lead_job, args=(job_id, name, force_type), daemon=True)
-    thread.start()
+    _job_executor.submit(run_manual_lead_job, job_id, name, force_type)
     return jsonify({"job_id": job_id})
 
 
