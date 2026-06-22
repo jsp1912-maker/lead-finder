@@ -1,0 +1,1803 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Heineken Lead Finder</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #f4f6f4;
+  --surface: #ffffff;
+  --surface2: #eef2ee;
+  --border: #d8e4d8;
+  --border2: #c4d8c4;
+  --accent: #005826;
+  --accent-hover: #003d1a;
+  --text: #0f1f0f;
+  --text-muted: #5a7a5a;
+  --text-dim: #3d5c3d;
+  --green: #005826;
+  --red: #dc2626;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'Inter',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100vh; -webkit-font-smoothing:antialiased; }
+
+/* ── Sidebar ── */
+.sidebar {
+  position:fixed; left:0; top:0; bottom:0; width:220px;
+  background:#005826; border-right:none;
+  display:flex; flex-direction:column; z-index:50;
+}
+.sidebar-logo { padding:22px 20px 18px; font-size:17px; font-weight:800; color:#fff; letter-spacing:-0.3px; border-bottom:1px solid rgba(255,255,255,.1); }
+.sidebar-logo span { color:#4ade80; }
+.nav-section { padding:16px 16px 6px; font-size:10px; color:rgba(255,255,255,.4); text-transform:uppercase; letter-spacing:1.8px; font-weight:600; }
+.nav-item {
+  display:flex; align-items:center; gap:9px;
+  padding:9px 14px; margin:1px 8px; border-radius:6px;
+  color:rgba(255,255,255,.65); font-size:13px; font-weight:500; cursor:pointer; transition:all .12s;
+  border:none; background:none; width:calc(100% - 16px); text-align:left;
+}
+.nav-item:hover { background:rgba(255,255,255,.1); color:#fff; }
+.nav-item.active { background:rgba(255,255,255,.15); color:#fff; font-weight:600; }
+.nav-icon { font-size:15px; width:18px; text-align:center; }
+.nav-count { margin-left:auto; font-size:11px; background:rgba(255,255,255,.15); color:rgba(255,255,255,.8); padding:1px 6px; border-radius:4px; min-width:18px; text-align:center; font-weight:600; }
+.nav-item.active .nav-count { background:rgba(255,255,255,.25); color:#fff; }
+.sidebar-stats { margin-top:auto; padding:14px 16px; border-top:1px solid rgba(255,255,255,.1); }
+.sidebar-stat { display:flex; justify-content:space-between; padding:5px 0; font-size:12px; }
+.sidebar-stat-label { color:rgba(255,255,255,.5); }
+.sidebar-stat-val { font-weight:700; color:#4ade80; }
+
+/* ── Status badges ── */
+.status-badge { display:inline-flex; align-items:center; gap:4px; font-size:11px; padding:3px 8px; border-radius:4px; cursor:pointer; border:none; font-weight:600; transition:all .12s; }
+.status-nieuw          { background:#f1f5f9; color:#475569; border:1px solid #cbd5e1; }
+.status-gecontacteerd  { background:#eff6ff; color:#2563eb; border:1px solid #bfdbfe; }
+.status-geinteresseerd { background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0; }
+.status-afgewezen      { background:#fef2f2; color:#dc2626; border:1px solid #fecaca; }
+.status-menu { position:absolute; z-index:100; background:#fff; border:1px solid var(--border2); border-radius:8px; padding:4px; box-shadow:0 8px 32px rgba(0,0,0,.12); min-width:170px; }
+.status-menu button { display:block; width:100%; text-align:left; padding:7px 10px; border:none; background:none; color:var(--text-dim); font-size:12px; cursor:pointer; border-radius:4px; font-family:inherit; }
+.status-menu button:hover { background:var(--surface2); color:var(--text); }
+
+/* ── Main ── */
+.main { margin-left:220px; min-height:100vh; }
+
+/* ── Top bar ── */
+.topbar {
+  padding:18px 28px; border-bottom:1px solid var(--border);
+  background:#fff; display:flex; align-items:center; justify-content:space-between;
+  position:sticky; top:0; z-index:40; box-shadow:0 1px 4px rgba(0,0,0,.06);
+}
+.topbar-title { font-size:16px; font-weight:700; color:var(--text); letter-spacing:-0.2px; }
+.topbar-sub { font-size:12px; color:var(--text-muted); margin-top:2px; }
+.stat-chips { display:flex; gap:8px; }
+.chip { padding:5px 12px; border-radius:5px; font-size:12px; font-weight:600; }
+.chip-green2 { background:#e8f5ee; color:#005826; }
+.chip-red    { background:#fef2f2; color:#dc2626; }
+.chip-yellow { background:#fffbeb; color:#d97706; }
+.chip-green  { background:#f0fdf4; color:#15803d; }
+
+/* ── Search panel ── */
+.search-panel { padding:20px 28px; background:var(--surface); border-bottom:1px solid var(--border); }
+.panel-tabs { display:flex; gap:2px; margin-bottom:18px; background:var(--bg); border-radius:7px; padding:3px; width:fit-content; }
+.panel-tab {
+  padding:7px 16px; border-radius:5px; border:none;
+  background:none; color:var(--text-muted); font-size:12px; font-weight:500; cursor:pointer; transition:all .12s; font-family:inherit;
+}
+.panel-tab.active { background:#fff; color:var(--text); font-weight:600; box-shadow:0 1px 4px rgba(0,0,0,.08); }
+.search-form { display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; }
+.field { display:flex; flex-direction:column; gap:5px; }
+.field label { font-size:11px; color:var(--text-muted); font-weight:500; letter-spacing:0.3px; }
+.field input, .field select {
+  background:var(--bg); border:1px solid var(--border2); color:var(--text);
+  padding:8px 12px; border-radius:6px; font-size:13px; outline:none; transition:border-color .15s;
+  min-width:150px; font-family:inherit;
+}
+.field input:focus, .field select:focus { border-color:var(--accent); }
+.btn-primary {
+  background:var(--accent); color:#fff; border:none; padding:9px 20px;
+  border-radius:6px; font-size:13px; font-weight:600; cursor:pointer; transition:background .15s;
+  white-space:nowrap; font-family:inherit;
+}
+.btn-primary:hover { background:var(--accent-hover); }
+.btn-primary:disabled { background:#d1e8d9; color:#8aaa8a; cursor:not-allowed; }
+.btn-secondary {
+  background:var(--surface2); color:var(--text-dim); border:1px solid var(--border2);
+  padding:7px 14px; border-radius:6px; font-size:12px; font-weight:500; cursor:pointer;
+  transition:all .12s; white-space:nowrap; font-family:inherit;
+}
+.btn-secondary:hover { border-color:var(--accent); color:var(--text); }
+.progress-wrap { display:none; margin-top:14px; }
+.progress-track {
+  position:relative; background:var(--bg); border:1px solid var(--border2);
+  border-radius:20px; height:28px; overflow:hidden;
+}
+.progress-wrap.busy .progress-track {
+  animation: trackPulse 1.2s ease-in-out infinite;
+}
+@keyframes trackPulse {
+  0%,100% { border-color: var(--border2); }
+  50%      { border-color: #f5a623; box-shadow: 0 0 6px rgba(245,166,35,.4); }
+}
+.progress-fill {
+  position:absolute; left:0; top:0; height:100%;
+  background:linear-gradient(90deg,#c8860a,#f5a623,#fbbf24);
+  transition:width .4s ease; width:0%; border-radius:20px;
+}
+.progress-pct {
+  position:absolute; right:8px; top:50%; transform:translateY(-50%);
+  font-size:11px; font-weight:600; color:#7a5200; pointer-events:none;
+}
+.progress-beer {
+  position:absolute; top:50%; transform:translateY(-50%);
+  font-size:18px; transition:left .4s ease;
+  left:0%; filter:drop-shadow(0 1px 2px rgba(0,0,0,.2));
+  pointer-events:none; line-height:1;
+}
+@keyframes beerBounce {
+  0%,100% { margin-top:0px; }
+  50%      { margin-top:-5px; }
+}
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.progress-wrap.busy .progress-beer {
+  animation: beerBounce .7s ease-in-out infinite;
+}
+.progress-msg { font-size:12px; color:var(--text-dim); margin-top:8px; text-align:center; min-height:16px; }
+
+/* ── Search tabs ── */
+.search-tabs { display:flex; gap:2px; margin-bottom:14px; background:var(--bg); border-radius:7px; padding:3px; width:fit-content; }
+.search-tab { padding:5px 14px; border-radius:5px; border:none; background:none; color:var(--text-muted); font-size:12px; font-weight:500; cursor:pointer; transition:all .12s; font-family:inherit; }
+.search-tab.active { background:var(--surface2); color:var(--text); font-weight:600; }
+.sport-tag { padding:4px 10px; border-radius:4px; background:var(--surface2); border:1px solid var(--border2); color:var(--text-dim); font-size:12px; cursor:pointer; transition:all .12s; }
+.sport-tag:hover { border-color:var(--accent); color:var(--text); }
+
+/* ── Filter bar ── */
+.filter-bar { padding:10px 28px; display:flex; gap:8px; align-items:center; border-bottom:1px solid var(--border); }
+.filter-label { font-size:11px; color:#64748b; font-weight:500; }
+.filter-btn { padding:4px 10px; border-radius:4px; border:1px solid var(--border2); background:none; color:var(--text-muted); font-size:11px; cursor:pointer; transition:all .12s; font-family:inherit; }
+.filter-btn:hover { border-color:var(--accent); color:var(--text-dim); }
+.filter-btn.active { background:#e8f5ee; border-color:var(--accent); color:#005826; font-weight:600; }
+
+/* ── Content ── */
+.content { padding:24px 28px; }
+.leads-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(360px,1fr)); gap:14px; }
+.empty { text-align:center; padding:80px 20px; color:#64748b; grid-column:1/-1; }
+.empty-icon { font-size:40px; margin-bottom:10px; }
+.empty-text { font-size:14px; }
+
+/* ── Lead card ── */
+.card {
+  background:var(--surface); border:1px solid var(--border); border-radius:10px;
+  overflow:hidden; transition:border-color .15s, box-shadow .15s;
+}
+.card:hover { border-color:var(--accent); box-shadow:0 4px 16px rgba(0,88,38,.1); }
+.card-img { width:100%; height:140px; object-fit:cover; object-position:top; display:block; }
+.card-no-img { width:100%; height:140px; background:var(--bg); display:flex; align-items:center; justify-content:center; font-size:11px; color:#94a3b8; flex-direction:column; gap:6px; }
+.card-no-img-icon { font-size:24px; }
+.card-body { padding:14px; }
+.card-top { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:10px; }
+.card-name { font-size:14px; font-weight:600; color:var(--text); line-height:1.3; letter-spacing:-0.1px; }
+.card-sub { font-size:11px; color:var(--text-muted); margin-top:2px; }
+.badge { padding:2px 7px; border-radius:4px; font-size:10px; font-weight:700; white-space:nowrap; flex-shrink:0; }
+.b-sport { background:#e8f5ee; color:#005826; border:1px solid #b6d9c4; }
+.q-low  { background:#fef2f2; color:#dc2626; border:1px solid #fecaca; }
+.q-mid  { background:#fffbeb; color:#d97706; border:1px solid #fde68a; }
+.q-high { background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0; }
+.q-full { background:#eff6ff; color:#2563eb; border:1px solid #bfdbfe; }
+.info-row { display:flex; align-items:flex-start; gap:7px; margin-bottom:4px; font-size:12px; }
+.info-ic { width:15px; text-align:center; flex-shrink:0; margin-top:1px; opacity:.5; }
+.info-val { color:var(--text-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
+.info-val a { color:#005826; text-decoration:none; font-weight:500; }
+.info-val a:hover { text-decoration:underline; }
+.found { color:#15803d; }
+.unfound { color:#94a3b8; }
+.card-actions { display:flex; gap:6px; margin-top:12px; padding-top:12px; border-top:1px solid var(--border); }
+.btn-sm { flex:1; padding:6px; border-radius:5px; border:1px solid var(--border2); background:none; color:var(--text-muted); font-size:11px; font-weight:500; cursor:pointer; transition:all .12s; text-align:center; font-family:inherit; }
+.btn-sm:hover { background:#e8f5ee; border-color:var(--accent); color:#005826; }
+.btn-sm.danger:hover { background:#fef2f2; border-color:#dc2626; color:#dc2626; }
+.btn-sm.secondary:hover { background:#eff6ff; border-color:#3b82f6; color:#1d4ed8; }
+
+/* ── Board ── */
+.board-section { margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
+.board-title { font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:7px; font-weight:600; }
+.board-grid { display:grid; grid-template-columns:1fr 1fr; gap:5px; }
+.board-role { background:var(--bg); border-radius:5px; padding:6px 8px; }
+.board-role-name { font-size:10px; color:var(--text-muted); }
+.board-role-person { font-size:11px; color:var(--text); font-weight:600; margin-top:1px; }
+.board-role-email { font-size:10px; color:#005826; }
+.board-page-btn { display:flex; align-items:center; justify-content:space-between; background:#e8f5ee; color:#005826; border:1px solid #b6d9c4; border-radius:7px; padding:11px 14px; font-size:12px; font-weight:600; text-decoration:none; transition:all .15s; }
+.board-page-btn:hover { background:#005826; border-color:#005826; color:#fff; }
+.board-page-btn-dim { background:var(--surface2); color:var(--text-dim); border:1px solid var(--border2); }
+.board-page-btn-dim:hover { background:var(--border2); color:var(--text); }
+
+/* ── Note & followup ── */
+.note-area { width:100%; box-sizing:border-box; background:var(--bg); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:12px; padding:8px 10px; resize:vertical; min-height:56px; font-family:inherit; margin-top:10px; transition:border-color .15s; }
+.note-area:focus { outline:none; border-color:var(--accent); }
+.note-area::placeholder { color:#94a3b8; }
+.note-saved { font-size:11px; color:#15803d; margin-top:3px; display:none; }
+.followup-input { background:var(--bg); border:1px solid var(--border); border-radius:5px; color:var(--text); font-size:12px; padding:4px 8px; cursor:pointer; font-family:inherit; }
+.followup-input:focus { outline:none; border-color:var(--accent); }
+.followup-input::-webkit-calendar-picker-indicator { opacity:0.5; cursor:pointer; }
+
+/* ── Export/sort dropdown opts ── */
+.export-opt { display:block; width:100%; text-align:left; padding:7px 10px; border:none; background:none; color:var(--text-dim); font-size:12px; cursor:pointer; border-radius:4px; font-family:inherit; }
+.export-opt:hover { background:var(--border2); color:var(--text); }
+
+/* ── Events ── */
+.events-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:14px; }
+.event-card { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:16px; transition:border-color .15s; }
+.event-card:hover { border-color:var(--border2); box-shadow:0 4px 20px rgba(0,0,0,.3); }
+.event-title { font-size:14px; font-weight:600; color:var(--text); margin-bottom:7px; line-height:1.3; }
+.event-date { font-size:12px; color:var(--accent); font-weight:600; margin-bottom:5px; }
+.event-meta { font-size:11px; color:var(--text-muted); margin-bottom:3px; }
+.event-source { display:inline-block; padding:2px 7px; border-radius:3px; font-size:10px; background:var(--surface2); color:var(--text-dim); margin-top:7px; font-weight:500; }
+.event-actions { display:flex; gap:6px; margin-top:12px; padding-top:12px; border-top:1px solid var(--border); }
+
+/* ── Modal ── */
+.overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:200; align-items:center; justify-content:center; padding:20px; backdrop-filter:blur(4px); }
+.overlay.open { display:flex; }
+.modal { background:#fff; border:1px solid var(--border); border-radius:12px; width:100%; max-width:660px; max-height:88vh; overflow-y:auto; padding:24px; box-shadow:0 20px 60px rgba(0,0,0,.15); }
+.modal-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; }
+.modal-head h3 { font-size:16px; color:var(--text); font-weight:700; }
+.btn-close { background:none; border:none; color:var(--text-muted); font-size:20px; cursor:pointer; }
+.email-area { width:100%; background:var(--bg); border:1px solid var(--border2); border-radius:7px; padding:14px; font-size:13px; line-height:1.8; color:var(--text); white-space:pre-wrap; font-family:inherit; min-height:280px; resize:vertical; }
+.btn-copy { margin-top:10px; background:var(--accent); color:#fff; border:none; padding:8px 18px; border-radius:6px; cursor:pointer; font-size:13px; font-weight:600; font-family:inherit; }
+.btn-copy:hover { background:var(--accent-hover); }
+
+/* ── Dashboard ── */
+.dash-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:24px; }
+.dash-card { background:#fff; border:1px solid var(--border); border-radius:10px; padding:20px; }
+.dash-card-label { font-size:11px; color:var(--text-muted); font-weight:600; text-transform:uppercase; letter-spacing:0.8px; margin-bottom:8px; }
+.dash-card-value { font-size:32px; font-weight:800; color:var(--text); letter-spacing:-1px; line-height:1; }
+.dash-card-sub { font-size:12px; color:var(--text-muted); margin-top:6px; }
+.dash-card-accent { border-top:3px solid var(--accent); }
+.dash-card-red   { border-top:3px solid #e31b23; }
+.dash-card-blue  { border-top:3px solid #2563eb; }
+.dash-card-amber { border-top:3px solid #d97706; }
+.dash-section { background:#fff; border:1px solid var(--border); border-radius:10px; padding:20px; margin-bottom:14px; }
+.dash-section-title { font-size:13px; font-weight:700; color:var(--text); margin-bottom:16px; display:flex; align-items:center; gap:8px; }
+.dash-bar-row { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+.dash-bar-label { font-size:12px; color:var(--text-dim); width:120px; flex-shrink:0; }
+.dash-bar-track { flex:1; background:var(--bg); border-radius:4px; height:8px; overflow:hidden; }
+.dash-bar-fill { height:100%; border-radius:4px; transition:width .6s ease; }
+.dash-bar-count { font-size:12px; font-weight:700; color:var(--text); width:32px; text-align:right; flex-shrink:0; }
+.dash-pct { font-size:11px; color:var(--text-muted); width:36px; text-align:right; flex-shrink:0; }
+.dash-two { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.dash-funnel { display:flex; flex-direction:column; gap:8px; }
+.dash-funnel-row { display:flex; align-items:center; gap:10px; }
+.dash-funnel-bar { height:32px; border-radius:5px; display:flex; align-items:center; padding:0 12px; font-size:12px; font-weight:600; color:#fff; transition:width .6s ease; min-width:60px; }
+.dash-top-list { display:flex; flex-direction:column; gap:6px; }
+.dash-top-row { display:flex; justify-content:space-between; align-items:center; padding:8px 10px; background:var(--bg); border-radius:6px; font-size:12px; }
+.dash-top-name { color:var(--text-dim); font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:160px; }
+.dash-top-badge { font-size:11px; font-weight:700; padding:2px 8px; border-radius:4px; }
+
+/* ── Toast ── */
+.toast { position:fixed; bottom:20px; right:20px; padding:10px 16px; border-radius:7px; font-size:13px; font-weight:600; color:#fff; background:#005826; z-index:999; display:none; animation:slideUp .2s ease; }
+@keyframes slideUp { from{transform:translateY(12px);opacity:0} to{transform:translateY(0);opacity:1} }
+</style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<div class="sidebar">
+  <div class="sidebar-logo"><span style="color:#e31b23">★</span> <span>Heineken</span> Leads</div>
+
+  <div class="nav-section">Zoeken</div>
+  <button class="nav-item active" id="nav-business" onclick="switchTab('business')">
+    <span class="nav-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg></span> Eetgelegenheden
+  </button>
+  <button class="nav-item" id="nav-sport" onclick="switchTab('sport')">
+    <span class="nav-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg></span> Sportverenigingen
+  </button>
+  <button class="nav-item" id="nav-events" onclick="switchTab('events')">
+    <span class="nav-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span> Evenementen
+  </button>
+
+  <div class="nav-section" style="margin-top:16px">Overzicht</div>
+  <button class="nav-item" id="nav-dashboard" onclick="switchView('dashboard')">
+    <span class="nav-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg></span> Dashboard
+  </button>
+  <button class="nav-item" id="nav-all" onclick="switchView('all')">
+    <span class="nav-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></span> Alle leads
+    <span class="nav-count" id="nc-all">0</span>
+  </button>
+  <button class="nav-item" id="nav-nieuw" onclick="switchView('status-nieuw')">
+    <span class="nav-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg></span> Nieuw
+    <span class="nav-count" id="nc-nieuw">0</span>
+  </button>
+  <button class="nav-item" id="nav-gecontacteerd" onclick="switchView('status-gecontacteerd')">
+    <span class="nav-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></span> Gecontacteerd
+    <span class="nav-count" id="nc-gecontacteerd">0</span>
+  </button>
+  <button class="nav-item" id="nav-geinteresseerd" onclick="switchView('status-geinteresseerd')">
+    <span class="nav-icon" style="color:#e31b23">★</span> Geïnteresseerd
+    <span class="nav-count" id="nc-geinteresseerd">0</span>
+  </button>
+  <button class="nav-item" id="nav-afgewezen" onclick="switchView('status-afgewezen')">
+    <span class="nav-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></span> Afgewezen
+    <span class="nav-count" id="nc-afgewezen">0</span>
+  </button>
+
+  <div class="sidebar-stats">
+    <div class="sidebar-stat"><span class="sidebar-stat-label">Totaal leads</span><span class="sidebar-stat-val" id="s-total">0</span></div>
+    <div class="sidebar-stat"><span class="sidebar-stat-label">Sportclubs</span><span class="sidebar-stat-val" id="s-missing" style="color:#4ade80">0</span></div>
+    <div class="sidebar-stat"><span class="sidebar-stat-label">Email gevonden</span><span class="sidebar-stat-val" id="s-email" style="color:#10b981">0</span></div>
+    <div class="sidebar-stat"><span class="sidebar-stat-label">Evenementen</span><span class="sidebar-stat-val" id="s-events" style="color:#f59e0b">0</span></div>
+  </div>
+</div>
+
+<!-- Main -->
+<div class="main">
+
+  <!-- Topbar -->
+  <div class="topbar">
+    <div>
+      <div class="topbar-title" id="topbar-title">Eetgelegenheden zoeken</div>
+      <div class="topbar-sub" id="topbar-sub">Vind lokale restaurants en eetgelegenheden</div>
+    </div>
+    <div class="stat-chips">
+      <span class="chip chip-green2" id="chip-total">0 leads</span>
+      <span class="chip chip-green2" id="chip-missing">0 clubs</span>
+      <span class="chip chip-green" id="chip-email">0 emails</span>
+    </div>
+  </div>
+
+  <!-- Search panel -->
+  <div class="search-panel">
+
+    <!-- Business search -->
+    <div id="panel-business">
+      <div class="search-tabs">
+        <button class="search-tab active" id="bt-broad" onclick="switchSearchTab('business','broad')">Breed zoeken</button>
+        <button class="search-tab" id="bt-name" onclick="switchSearchTab('business','name')">Op naam zoeken</button>
+      </div>
+      <div id="b-broad">
+      <div class="search-form">
+        <div class="field">
+          <label>Type eetgelegenheid</label>
+          <select id="b-niche-sel" onchange="smartSelect(this,'b-niche')">
+            <option value="">Kies een type...</option>
+            <option value="restaurant">🍽️ Restaurant</option>
+            <option value="café">☕ Café</option>
+            <option value="eetcafé">🍺 Eetcafé</option>
+            <option value="pizzeria">🍕 Pizzeria</option>
+            <option value="sushi restaurant">🍣 Sushi restaurant</option>
+            <option value="steakhouse">🥩 Steakhouse</option>
+            <option value="brunchcafé">🥞 Brunchcafé</option>
+            <option value="grand café">🥂 Grand Café</option>
+            <option value="bistro">🫕 Bistro</option>
+            <option value="tapasbar">🫒 Tapasbar</option>
+            <option value="lunchroom">🥗 Lunchroom</option>
+            <option value="snackbar">🍟 Snackbar</option>
+            <option value="__custom__">✏️ Anders, typ zelf...</option>
+          </select>
+          <input type="text" id="b-niche" placeholder="typ hier je type..." style="display:none;margin-top:4px" />
+        </div>
+        <div class="field">
+          <label>Stad</label>
+          <select id="b-city-sel" onchange="smartSelect(this,'b-city')">
+            <option value="">Kies een stad...</option>
+            <option>Amsterdam</option><option>Rotterdam</option><option>Den Haag</option>
+            <option>Utrecht</option><option>Eindhoven</option><option>Tilburg</option>
+            <option>Groningen</option><option>Almere</option><option>Breda</option>
+            <option>Nijmegen</option><option>Arnhem</option><option>Enschede</option>
+            <option>Haarlem</option><option>Zwolle</option><option>Amersfoort</option>
+            <option>Apeldoorn</option><option>Maastricht</option><option>Leiden</option>
+            <option>Dordrecht</option><option>Zoetermeer</option><option>Delft</option>
+            <option>Deventer</option><option>Alkmaar</option><option>Leeuwarden</option>
+            <option>Venlo</option><option>Ede</option><option>Hilversum</option>
+            <option value="__custom__">✏️ Anders, typ zelf...</option>
+          </select>
+          <input type="text" id="b-city" placeholder="typ hier je stad..." style="display:none;margin-top:4px" />
+        </div>
+        <div class="field">
+          <label>Aantal</label>
+          <select id="b-max">
+            <option value="5">5 leads</option>
+            <option value="10" selected>10 leads</option>
+            <option value="20">20 leads</option>
+            <option value="50">50 leads</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Afstand</label>
+          <select id="b-radius">
+            <option value="0">Alleen deze stad</option>
+            <option value="10">+10 km</option>
+            <option value="25">+25 km</option>
+            <option value="50">+50 km</option>
+          </select>
+        </div>
+        <button class="btn-primary" id="btn-b" onclick="startBusinessSearch()">Zoeken</button>
+      </div>
+      </div>
+      <div id="b-name" style="display:none">
+      <div class="search-form">
+        <div class="field" style="flex:2">
+          <label>Naam van de zaak</label>
+          <input type="text" id="b-name-input" placeholder="bijv. Restaurant Bellezza Amsterdam" />
+        </div>
+        <button class="btn-primary" onclick="startNameSearch('business')">Zoeken</button>
+        <button class="btn-primary" onclick="document.getElementById('b-excel-input').click()">📂 Excel</button>
+        <input type="file" id="b-excel-input" accept=".xlsx,.xls" style="display:none" onchange="startExcelSearch('business', this)" />
+      </div>
+      </div>
+      <div class="progress-wrap" id="pw-b">
+        <div class="progress-track"><div class="progress-fill" id="pf-b"></div><div class="progress-beer" id="pb-b">🍺</div><div class="progress-pct" id="pp-b"></div></div>
+        <div class="progress-msg" id="pm-b"></div>
+      </div>
+    </div>
+
+    <!-- Sport search -->
+    <div id="panel-sport" style="display:none">
+      <div class="search-tabs">
+        <button class="search-tab active" id="st-broad" onclick="switchSearchTab('sport','broad')">Breed zoeken</button>
+        <button class="search-tab" id="st-name" onclick="switchSearchTab('sport','name')">Op naam zoeken</button>
+      </div>
+      <div id="s-broad">
+      <div class="search-form">
+        <div class="field">
+          <label>Sport / club type</label>
+          <select id="s-niche-sel" onchange="smartSelect(this,'s-niche')">
+            <option value="">Kies een type...</option>
+            <option value="voetbalclub">⚽ Voetbalclub</option>
+            <option value="tennisvereniging">🎾 Tennisvereniging</option>
+            <option value="hockeyclub">🏑 Hockeyclub</option>
+            <option value="basketbalclub">🏀 Basketbalclub</option>
+            <option value="volleybalclub">🏐 Volleybalclub</option>
+            <option value="zwemvereniging">🏊 Zwemvereniging</option>
+            <option value="atletiekvereniging">🏃 Atletiekvereniging</option>
+            <option value="handbalclub">🤾 Handbalclub</option>
+            <option value="rugbyclub">🏉 Rugbyclub</option>
+            <option value="golfclub">⛳ Golfclub</option>
+            <option value="padelclub">🎾 Padelclub</option>
+            <option value="korfbalclub">🏐 Korfbalclub</option>
+            <option value="__custom__">✏️ Anders, typ zelf...</option>
+          </select>
+          <input type="text" id="s-niche" placeholder="typ hier je sporttype..." style="display:none;margin-top:4px" />
+        </div>
+        <div class="field">
+          <label>Stad</label>
+          <select id="s-city-sel" onchange="smartSelect(this,'s-city')">
+            <option value="">Kies een stad...</option>
+            <option>Amsterdam</option><option>Rotterdam</option><option>Den Haag</option>
+            <option>Utrecht</option><option>Eindhoven</option><option>Tilburg</option>
+            <option>Groningen</option><option>Almere</option><option>Breda</option>
+            <option>Nijmegen</option><option>Arnhem</option><option>Enschede</option>
+            <option>Haarlem</option><option>Zwolle</option><option>Amersfoort</option>
+            <option>Apeldoorn</option><option>Maastricht</option><option>Leiden</option>
+            <option>Dordrecht</option><option>Zoetermeer</option><option>Delft</option>
+            <option>Deventer</option><option>Alkmaar</option><option>Leeuwarden</option>
+            <option>Venlo</option><option>Ede</option><option>Hilversum</option>
+            <option value="__custom__">✏️ Anders, typ zelf...</option>
+          </select>
+          <input type="text" id="s-city" placeholder="typ hier je stad..." style="display:none;margin-top:4px" />
+        </div>
+        <div class="field">
+          <label>Aantal</label>
+          <select id="s-max">
+            <option value="5">5 clubs</option>
+            <option value="10" selected>10 clubs</option>
+            <option value="20">20 clubs</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Afstand</label>
+          <select id="s-radius">
+            <option value="0">Alleen deze stad</option>
+            <option value="10">+10 km</option>
+            <option value="25">+25 km</option>
+            <option value="50">+50 km</option>
+          </select>
+        </div>
+        <button class="btn-primary" id="btn-s" onclick="startSportSearch()">Zoeken</button>
+      </div>
+      </div>
+      <div id="s-name" style="display:none">
+      <div class="search-form">
+        <div class="field" style="flex:2">
+          <label>Naam van de club</label>
+          <input type="text" id="s-name-input" placeholder="bijv. SV Orion Nijmegen" />
+        </div>
+        <button class="btn-primary" onclick="startNameSearch('sport')">Zoeken</button>
+        <button class="btn-primary" onclick="document.getElementById('s-excel-input').click()">📂 Excel</button>
+        <input type="file" id="s-excel-input" accept=".xlsx,.xls" style="display:none" onchange="startExcelSearch('sport', this)" />
+      </div>
+      </div>
+      <div class="progress-wrap" id="pw-s">
+        <div class="progress-track"><div class="progress-fill" id="pf-s"></div><div class="progress-beer" id="pb-s">🍺</div><div class="progress-pct" id="pp-s"></div></div>
+        <div class="progress-msg" id="pm-s"></div>
+      </div>
+    </div>
+
+    <!-- Events search -->
+    <div id="panel-events" style="display:none">
+      <div class="search-form">
+        <div class="field">
+          <label>Type evenement</label>
+          <input type="text" id="e-type" placeholder="bijv. festival, markt" />
+        </div>
+        <div class="field">
+          <label>Stad</label>
+          <input type="text" id="e-city" placeholder="bijv. Nijmegen" />
+        </div>
+        <div class="field">
+          <label>Aantal</label>
+          <select id="e-max">
+            <option value="10" selected>10 evenementen</option>
+            <option value="20">20 evenementen</option>
+          </select>
+        </div>
+        <button class="btn-primary" id="btn-e" onclick="startEventsSearch()">Zoeken</button>
+      </div>
+      <div style="margin-top:10px">
+        <label style="font-size:0.8rem;color:#64748b">Snel zoeken:</label>
+        <select onchange="if(this.value){quickEvent(this.value);this.value=''}" style="margin-left:8px;background:#fff;border:1px solid var(--border2);color:var(--text);border-radius:6px;padding:5px 10px;font-size:0.82rem;cursor:pointer">
+          <option value="">Kies een type...</option>
+          <option value="festival">🎪 Festival</option>
+          <option value="markt">🛒 Markt</option>
+          <option value="concert">🎵 Concert</option>
+          <option value="beurs">🏢 Beurs</option>
+          <option value="sport evenement">🏅 Sport</option>
+          <option value="food festival">🍔 Food festival</option>
+          <option value="bruiloft evenement">💒 Bruiloft</option>
+          <option value="kermis">🎡 Kermis</option>
+        </select>
+      </div>
+      <div class="progress-wrap" id="pw-e">
+        <div class="progress-track"><div class="progress-fill" id="pf-e"></div><div class="progress-beer" id="pb-e">🍺</div><div class="progress-pct" id="pp-e"></div></div>
+        <div class="progress-msg" id="pm-e"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Filter bar (leads only) -->
+  <div class="filter-bar" id="filter-bar" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+    <div style="display:flex;align-items:center;gap:8px">
+      <div style="position:relative">
+        <button class="btn-secondary" id="filter-btn-label" style="font-size:0.82rem;padding:5px 12px" onclick="toggleFilterMenu(this)">🔽 Filter: Alle ▾</button>
+        <div id="filter-menu" style="display:none;position:absolute;left:0;top:1;background:#fff;border:1px solid var(--border);border-radius:8px;padding:4px;min-width:200px;z-index:100;box-shadow:0 8px 24px rgba(0,0,0,.1)">
+          <div style="font-size:0.72rem;color:#64748b;padding:6px 10px 2px">Kwaliteit</div>
+          <button class="export-opt" onclick="setFilter('all'); updateFilterLabel('Alle')">✅ Alle leads</button>
+          <button class="export-opt" onclick="setFilter('q-full'); updateFilterLabel('🔵 Volledig')">🔵 Volledig</button>
+          <button class="export-opt" onclick="setFilter('q-high'); updateFilterLabel('🟢 Goede lead')">🟢 Goede lead</button>
+          <button class="export-opt" onclick="setFilter('q-mid'); updateFilterLabel('🟡 Gedeeltelijk')">🟡 Gedeeltelijk</button>
+          <button class="export-opt" onclick="setFilter('q-low'); updateFilterLabel('🔴 Weinig')">🔴 Weinig gevonden</button>
+          <div style="font-size:0.72rem;color:#64748b;padding:6px 10px 2px;border-top:1px solid var(--border);margin-top:4px">Status</div>
+          <button class="export-opt" onclick="setFilter('status-nieuw'); updateFilterLabel('Nieuw')">⚪ Nieuw</button>
+          <button class="export-opt" onclick="setFilter('status-gecontacteerd'); updateFilterLabel('Gecontacteerd')">🔵 Gecontacteerd</button>
+          <button class="export-opt" onclick="setFilter('status-geinteresseerd'); updateFilterLabel('Geïnteresseerd')">🟢 Geïnteresseerd</button>
+          <button class="export-opt" onclick="setFilter('status-afgewezen'); updateFilterLabel('Afgewezen')">🔴 Afgewezen</button>
+        </div>
+      </div>
+      <div style="position:relative">
+        <button class="btn-secondary" id="sort-btn-label" style="font-size:0.82rem;padding:5px 12px" onclick="toggleSortMenu(this)">↕ Sorteren ▾</button>
+        <div id="sort-menu" style="display:none;position:absolute;left:0;top:1;background:#fff;border:1px solid var(--border);border-radius:8px;padding:4px;min-width:200px;z-index:100;box-shadow:0 8px 24px rgba(0,0,0,.1)">
+          <div style="font-size:0.72rem;color:#64748b;padding:6px 10px 2px">Sorteren op</div>
+          <button class="export-opt" id="sort-opt-added" onclick="setSort('added')">🕐 Nieuwste eerst</button>
+          <button class="export-opt" id="sort-opt-name" onclick="setSort('name')">🔤 Naam (A–Z)</button>
+          <button class="export-opt" id="sort-opt-quality" onclick="setSort('quality')">⭐ Beste kwaliteit eerst</button>
+          <button class="export-opt" id="sort-opt-status" onclick="setSort('status')">📊 Status</button>
+        </div>
+      </div>
+    </div>
+    <div style="position:relative">
+      <button class="btn-secondary" style="font-size:0.82rem;padding:5px 12px" onclick="toggleExportMenu(this)">📥 Exporteren ▾</button>
+      <div id="export-menu" style="display:none;position:absolute;right:0;top:1;background:#fff;border:1px solid var(--border);border-radius:8px;padding:4px;min-width:200px;z-index:100;box-shadow:0 8px 24px rgba(0,0,0,.1)">
+        <div style="font-size:0.72rem;color:#64748b;padding:6px 10px 2px">Wat wil je exporteren?</div>
+        <button class="export-opt" onclick="doExport('view')">📋 Huidige weergave</button>
+        <button class="export-opt" onclick="doExport('all')">🗂️ Alle leads</button>
+        <button class="export-opt" onclick="doExport('nieuw')">⚪ Alleen Nieuw</button>
+        <button class="export-opt" onclick="doExport('gecontacteerd')">🔵 Alleen Gecontacteerd</button>
+        <button class="export-opt" onclick="doExport('geinteresseerd')">🟢 Alleen Geïnteresseerd</button>
+        <button class="export-opt" onclick="doExport('afgewezen')">🔴 Alleen Afgewezen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Follow-up banner -->
+  <div id="followup-banner" style="display:none; margin:0 0 16px 0; background:#1a2e1a; border:1px solid #15803d; border-radius:10px; padding:12px 16px">
+    <div style="font-size:0.82rem; font-weight:700; color:#4ade80; margin-bottom:8px">📅 Follow-up vandaag</div>
+    <div id="followup-list" style="display:flex; flex-direction:column; gap:6px"></div>
+  </div>
+
+  <!-- Content -->
+  <div class="content">
+    <div class="leads-grid" id="leads-grid"></div>
+    <div class="events-grid" id="events-grid" style="display:none"></div>
+    <div id="dashboard-view" style="display:none"></div>
+  </div>
+
+</div>
+
+<!-- Email modal -->
+<div class="overlay" id="modal-email">
+  <div class="modal" style="max-width:720px;width:95vw">
+    <div class="modal-head">
+      <h3 id="modal-name">Cold Email</h3>
+      <button class="btn-close" onclick="closeModal('modal-email')">&#x2715;</button>
+    </div>
+    <iframe id="modal-iframe" style="width:100%;height:60vh;border:1px solid var(--border);border-radius:8px;background:#fff"></iframe>
+    <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+      <button class="btn-copy" onclick="copyEmailText()">Kopieer tekst</button>
+      <button class="btn-copy" onclick="copyEmailHtml()" style="background:#0ea5e9">Kopieer voor Outlook</button>
+      <div style="flex:1"></div>
+      <button class="btn-copy" id="btn-email-sent" onclick="markEmailSent()" style="background:#005826;display:flex;align-items:center;gap:6px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        Email verstuurd
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Board modal -->
+<div class="overlay" id="modal-board">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="board-name">Bestuur</h3>
+      <button class="btn-close" onclick="closeModal('modal-board')">&#x2715;</button>
+    </div>
+    <div id="board-content"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let allLeads = [];
+let allEvents = [];
+let activeFilter = 'all';
+let activeTab = 'business';
+let activeSort = 'added';
+let pollTimers = {};
+let currentEmailLeadId = null;
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+async function init() {
+  await Promise.all([loadLeads(), loadEvents()]);
+}
+
+async function loadLeads() {
+  const r = await fetch('/api/leads');
+  allLeads = await r.json();
+  renderLeads();
+  updateStats();
+  renderFollowupBanner();
+}
+
+async function loadEvents() {
+  const r = await fetch('/api/events');
+  allEvents = await r.json();
+  updateStats();
+}
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  activeTab = tab;
+  // Verberg dashboard
+  document.getElementById('dashboard-view').style.display = 'none';
+  document.querySelector('.search-panel').style.display = 'block';
+  ['all','nieuw','gecontacteerd','geinteresseerd','afgewezen','dashboard'].forEach(v =>
+    document.getElementById(`nav-${v}`)?.classList.remove('active'));
+
+  ['business','sport','events'].forEach(t => {
+    document.getElementById(`panel-${t}`).style.display = t === tab ? 'block' : 'none';
+    document.getElementById(`nav-${t}`).classList.toggle('active', t === tab);
+  });
+  document.getElementById('filter-bar').style.display = tab === 'events' ? 'none' : 'flex';
+  document.getElementById('leads-grid').style.display = tab === 'events' ? 'none' : 'grid';
+  document.getElementById('events-grid').style.display = tab === 'events' ? 'grid' : 'none';
+
+  const titles = {
+    business: ['Eetgelegenheden zoeken', 'Vind lokale restaurants en eetgelegenheden'],
+    sport: ['Sportverenigingen zoeken', 'Vind clubs en scrape het bestuur automatisch'],
+    events: ['Evenementen zoeken', 'Vind lokale evenementen en hun organisatoren'],
+  };
+  document.getElementById('topbar-title').textContent = titles[tab][0];
+  document.getElementById('topbar-sub').textContent = titles[tab][1];
+
+  // Auto-filter op type bij wisselen van tab
+  if (tab === 'sport') activeFilter = 'sport';
+  else if (tab === 'business') activeFilter = 'business';
+
+  if (tab === 'events') renderEvents();
+  else renderLeads();
+}
+
+function switchView(filter) {
+  activeTab = 'business';
+  ['business','sport','events'].forEach(t => {
+    document.getElementById(`panel-${t}`).style.display = t === 'business' ? 'block' : 'none';
+    document.getElementById(`nav-${t}`).classList.remove('active');
+  });
+  ['all','nieuw','gecontacteerd','geinteresseerd','afgewezen','dashboard'].forEach(v =>
+    document.getElementById(`nav-${v}`)?.classList.remove('active'));
+  document.getElementById(`nav-${filter === 'dashboard' ? 'dashboard' : filter === 'all' ? 'all' : filter.replace('status-','')}`)?.classList.add('active');
+
+  const isDash = filter === 'dashboard';
+  document.getElementById('filter-bar').style.display = isDash ? 'none' : 'flex';
+  document.querySelector('.search-panel').style.display = isDash ? 'none' : 'block';
+  document.getElementById('leads-grid').style.display = isDash ? 'none' : 'grid';
+  document.getElementById('events-grid').style.display = 'none';
+  document.getElementById('dashboard-view').style.display = isDash ? 'block' : 'none';
+  document.getElementById('topbar-title').textContent = isDash ? 'Dashboard' : 'Leads overzicht';
+  document.getElementById('topbar-sub').textContent = isDash ? 'Jouw resultaten in één oogopslag' : '';
+
+  if (isDash) { renderDashboard(); return; }
+  setFilter(filter, null);
+}
+
+function renderDashboard() {
+  const leads = allLeads;
+  const total = leads.length;
+  const sport = leads.filter(l => l.type === 'sport').length;
+  const eten  = leads.filter(l => l.type !== 'sport').length;
+  const withEmail = leads.filter(l => l.email).length;
+
+  const byStatus = s => leads.filter(l => (l.status || 'nieuw') === s).length;
+  const nieuw          = byStatus('nieuw');
+  const gecontacteerd  = byStatus('gecontacteerd');
+  const geinteresseerd = byStatus('geinteresseerd');
+  const afgewezen      = byStatus('afgewezen');
+
+  const pct = (n) => total ? Math.round((n / total) * 100) : 0;
+  const convRate = gecontacteerd ? Math.round((geinteresseerd / gecontacteerd) * 100) : 0;
+
+  // Steden tellen
+  const cities = {};
+  leads.forEach(l => { if (l.city) cities[l.city] = (cities[l.city] || 0) + 1; });
+  const topCities = Object.entries(cities).sort((a,b) => b[1]-a[1]).slice(0,5);
+
+  // Follow-ups deze week
+  const today = new Date(); today.setHours(0,0,0,0);
+  const weekEnd = new Date(today); weekEnd.setDate(weekEnd.getDate() + 7);
+  const followupSoon = leads.filter(l => {
+    if (!l.followup_date) return false;
+    const d = new Date(l.followup_date);
+    return d >= today && d <= weekEnd;
+  }).length;
+  const overdueFollowup = leads.filter(l => {
+    if (!l.followup_date) return false;
+    return new Date(l.followup_date) < today;
+  }).length;
+
+  document.getElementById('dashboard-view').innerHTML = `
+    <div class="dash-grid">
+      <div class="dash-card dash-card-accent">
+        <div class="dash-card-label">Totaal leads</div>
+        <div class="dash-card-value">${total}</div>
+        <div class="dash-card-sub">${sport} sport · ${eten} eten</div>
+      </div>
+      <div class="dash-card dash-card-blue">
+        <div class="dash-card-label">Gecontacteerd</div>
+        <div class="dash-card-value">${gecontacteerd}</div>
+        <div class="dash-card-sub">${pct(gecontacteerd)}% van alle leads</div>
+      </div>
+      <div class="dash-card dash-card-red">
+        <div class="dash-card-label">Geïnteresseerd</div>
+        <div class="dash-card-value" style="color:#e31b23">${geinteresseerd}</div>
+        <div class="dash-card-sub">Conversie: ${convRate}%</div>
+      </div>
+      <div class="dash-card dash-card-amber">
+        <div class="dash-card-label">Follow-up nodig</div>
+        <div class="dash-card-value" style="color:#d97706">${overdueFollowup + followupSoon}</div>
+        <div class="dash-card-sub">${overdueFollowup} verlopen · ${followupSoon} deze week</div>
+      </div>
+    </div>
+
+    <div class="dash-two">
+      <div class="dash-section">
+        <div class="dash-section-title">
+          <span style="color:#e31b23">★</span> Status overzicht
+        </div>
+        <div class="dash-funnel">
+          ${[
+            ['Nieuw',          nieuw,          '#94a3b8', pct(nieuw)],
+            ['Gecontacteerd',  gecontacteerd,  '#2563eb', pct(gecontacteerd)],
+            ['Geïnteresseerd', geinteresseerd, '#e31b23', pct(geinteresseerd)],
+            ['Afgewezen',      afgewezen,      '#dc2626', pct(afgewezen)],
+          ].map(([label, count, color, p]) => `
+            <div class="dash-bar-row">
+              <div class="dash-bar-label">${label}</div>
+              <div class="dash-bar-track">
+                <div class="dash-bar-fill" style="width:${p}%;background:${color}"></div>
+              </div>
+              <div class="dash-bar-count">${count}</div>
+              <div class="dash-pct">${p}%</div>
+            </div>`).join('')}
+        </div>
+        <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
+          <div class="dash-card-label" style="margin-bottom:10px">Email beschikbaar</div>
+          <div class="dash-bar-row">
+            <div class="dash-bar-label">Met email</div>
+            <div class="dash-bar-track"><div class="dash-bar-fill" style="width:${pct(withEmail)}%;background:#005826"></div></div>
+            <div class="dash-bar-count">${withEmail}</div>
+            <div class="dash-pct">${pct(withEmail)}%</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="dash-section">
+        <div class="dash-section-title">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+          Top steden
+        </div>
+        <div class="dash-top-list">
+          ${topCities.length ? topCities.map(([city, count], i) => `
+            <div class="dash-top-row">
+              <span style="font-size:11px;color:var(--text-muted);width:18px">${i+1}</span>
+              <span class="dash-top-name">${city}</span>
+              <span class="dash-top-badge" style="background:#e8f5ee;color:#005826">${count} leads</span>
+            </div>`).join('') : '<div style="color:var(--text-muted);font-size:13px">Nog geen leads met stad</div>'}
+        </div>
+        <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
+          <div class="dash-card-label" style="margin-bottom:10px">Sport vs Eetgelegenheid</div>
+          <div class="dash-bar-row">
+            <div class="dash-bar-label">Sport</div>
+            <div class="dash-bar-track"><div class="dash-bar-fill" style="width:${pct(sport)}%;background:#005826"></div></div>
+            <div class="dash-bar-count">${sport}</div>
+            <div class="dash-pct">${pct(sport)}%</div>
+          </div>
+          <div class="dash-bar-row">
+            <div class="dash-bar-label">Eetgelegenheid</div>
+            <div class="dash-bar-track"><div class="dash-bar-fill" style="width:${pct(eten)}%;background:#2563eb"></div></div>
+            <div class="dash-bar-count">${eten}</div>
+            <div class="dash-pct">${pct(eten)}%</div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+// ── Searches ──────────────────────────────────────────────────────────────────
+async function startBusinessSearch() {
+  const niche = getFieldValue('b-niche-sel', 'b-niche');
+  const city = getFieldValue('b-city-sel', 'b-city');
+  const max = document.getElementById('b-max').value;
+  const radius = parseInt(document.getElementById('b-radius').value);
+  if (!niche || !city) { toast('Vul niche en stad in', '#ef4444'); return; }
+  await doSearch({niche, city, max: parseInt(max), radius}, 'b');
+}
+
+async function startSportSearch() {
+  const niche = getFieldValue('s-niche-sel', 's-niche');
+  const city = getFieldValue('s-city-sel', 's-city');
+  const max = document.getElementById('s-max').value;
+  const radius = parseInt(document.getElementById('s-radius').value);
+  if (!niche || !city) { toast('Vul sport en stad in', '#ef4444'); return; }
+  await doSearch({niche, city, max: parseInt(max), radius}, 's');
+}
+
+function quickSport(sport) {
+  document.getElementById('s-niche').value = sport;
+}
+
+function quickBusiness(type) {
+  document.getElementById('b-niche').value = type;
+}
+
+function smartSelect(sel, inputId) {
+  const input = document.getElementById(inputId);
+  if (sel.value === '__custom__') {
+    sel.style.display = 'none';
+    input.style.display = '';
+    input.value = '';
+    input.focus();
+  } else {
+    input.value = sel.value;
+  }
+}
+
+function getFieldValue(selId, inputId) {
+  const sel = document.getElementById(selId);
+  const input = document.getElementById(inputId);
+  if (sel && sel.style.display !== 'none' && sel.value && sel.value !== '__custom__') return sel.value;
+  return input ? input.value.trim() : '';
+}
+
+function quickEvent(type) {
+  document.getElementById('e-type').value = type;
+}
+
+function switchSearchTab(panel, mode) {
+  const prefix = panel === 'business' ? 'b' : 's';
+  document.getElementById(`${prefix}-broad`).style.display = mode === 'broad' ? 'block' : 'none';
+  document.getElementById(`${prefix}-name`).style.display  = mode === 'name'  ? 'block' : 'none';
+  document.getElementById(`${prefix}t-broad`).classList.toggle('active', mode === 'broad');
+  document.getElementById(`${prefix}t-name`).classList.toggle('active', mode === 'name');
+}
+
+const noteTimers = {};
+function onNoteInput(leadId, textarea) {
+  clearTimeout(noteTimers[leadId]);
+  noteTimers[leadId] = setTimeout(() => saveNote(leadId, textarea), 600);
+}
+
+async function saveNote(leadId, textarea) {
+  const note = textarea.value;
+  await fetch(`/api/leads/${leadId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ note })
+  });
+  const indicator = document.getElementById(`note-saved-${leadId}`);
+  if (indicator) {
+    indicator.style.display = 'block';
+    setTimeout(() => { indicator.style.display = 'none'; }, 2000);
+  }
+}
+
+async function startExcelSearch(type, input) {
+  const file = input.files[0];
+  if (!file) return;
+  input.value = '';
+
+  const isSport = type === 'sport';
+  const pwId = isSport ? 'pw-s' : 'pw-b';
+  const pfId = isSport ? 'pf-s' : 'pf-b';
+  const pmId = isSport ? 'pm-s' : 'pm-b';
+
+  document.getElementById(pwId).style.display = 'block';
+  setBeer(isSport ? 's' : 'b', 5);
+  document.getElementById(pmId).textContent = 'Excel inlezen...';
+
+  const formData = new FormData();
+  formData.append('file', file);
+  const r = await fetch('/api/upload-excel', { method: 'POST', body: formData });
+  const { names, error } = await r.json();
+
+  if (error || !names || names.length === 0) {
+    toast(error || 'Geen namen gevonden in het bestand', '#ef4444');
+    document.getElementById(pwId).style.display = 'none';
+    return;
+  }
+
+  toast(`${names.length} namen gevonden, zoeken gestart...`, '#10b981');
+
+  // Bepaal sport type label voor tweede zoekpoging
+  const sportLabel = isSport ? (document.getElementById('s-type-select')?.value || 'tennisvereniging') : '';
+
+  async function waitForJob(job_id, maxSeconds = 45) {
+    return new Promise(resolve => {
+      let elapsed = 0;
+      const t = setInterval(async () => {
+        elapsed += 1.5;
+        try {
+          const jr = await fetch(`/api/job/${job_id}`);
+          const job = await jr.json();
+          if (job.status === 'done' || job.status === 'error' || elapsed >= maxSeconds) {
+            clearInterval(t);
+            resolve(job);
+          }
+        } catch {
+          if (elapsed >= maxSeconds) { clearInterval(t); resolve({ status: 'error', count: 0 }); }
+        }
+      }, 1500);
+    });
+  }
+
+  let done = 0, gevonden = 0, nietGevonden = [], log = [];
+  for (const name of names) {
+    setBeer(isSport ? 's' : 'b', Math.round((done / names.length) * 100));
+    document.getElementById(pmId).textContent = `Zoeken (${done + 1}/${names.length}): ${name}`;
+
+    // Stap 1: Google Maps
+    const res = await fetch('/api/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ niche: name, city: '', max_results: 1, force_type: type })
+    });
+    const { job_id } = await res.json();
+    const job = await waitForJob(job_id, 60);
+
+    if ((job.count || 0) > 0) {
+      gevonden++;
+      log.push(`✓ ${name} — gevonden via Google Maps`);
+    } else {
+      // Stap 2: manual (Google Maps op naam + stad)
+      document.getElementById(pmId).textContent = `Nogmaals proberen: ${name}`;
+      const mr = await fetch('/api/leads/manual', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, force_type: type })
+      });
+      const { job_id: mjob_id } = await mr.json();
+      const mjob = await waitForJob(mjob_id, 60);
+
+      if ((mjob.count || 0) > 0) {
+        gevonden++;
+        log.push(`✓ ${name} — ${mjob.message || 'toegevoegd'}`);
+      } else {
+        nietGevonden.push(name);
+        log.push(`⚠ ${name} — ${mjob.message || 'niet gevonden'}`);
+      }
+    }
+
+    done++;
+  }
+
+  setBeer(isSport ? 's' : 'b', 100);
+  await loadLeads();
+
+  // Toon resultaten-popup
+  const dupCount = names.length - gevonden - nietGevonden.length;
+  document.getElementById(pmId).innerHTML =
+    `<b>${gevonden} nieuw toegevoegd</b>${dupCount > 0 ? ` · ${dupCount} al in database` : ''}${nietGevonden.length > 0 ? ` · ${nietGevonden.length} overgeslagen` : ''}<br><br>` +
+    `<div style="text-align:left;font-size:0.8rem;max-height:200px;overflow-y:auto;line-height:1.6">${log.map(l => `<div>${l}</div>`).join('')}</div>`;
+  document.getElementById(pfId).style.display = 'none';
+  // Verberg pas na 10 seconden zodat gebruiker het kan lezen
+  setTimeout(() => { document.getElementById(pwId).style.display = 'none'; }, 10000);
+  toast(`Excel klaar — ${gevonden} nieuw toegevoegd`, gevonden > 0 ? '#10b981' : '#f59e0b');
+}
+
+async function startNameSearch(type) {
+  const isSport = type === 'sport';
+  const inputId = isSport ? 's-name-input' : 'b-name-input';
+  const pwId    = isSport ? 'pw-s' : 'pw-b';
+  const pfId    = isSport ? 'pf-s' : 'pf-b';
+  const pmId    = isSport ? 'pm-s' : 'pm-b';
+
+  const name = document.getElementById(inputId).value.trim();
+  if (!name) { toast('Vul een naam in', '#ef4444'); return; }
+
+  document.getElementById(pwId).style.display = 'block';
+  setBeer(isSport ? 's' : 'b', 30);
+  document.getElementById(pmId).textContent = `Zoeken naar "${name}"...`;
+
+  const r = await fetch('/api/search', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ niche: name, city: '', max_results: 1, force_type: type })
+  });
+  const { job_id } = await r.json();
+
+  pollJob(job_id, isSport ? 's' : 'b', async () => {
+    await loadLeads();
+    document.getElementById(pwId).style.display = 'none';
+    toast(`Lead toegevoegd!`, '#10b981');
+  });
+}
+
+async function startEventsSearch() {
+  const city = document.getElementById('e-city').value.trim();
+  const max = document.getElementById('e-max').value;
+  if (!city) { toast('Vul een stad in', '#ef4444'); return; }
+
+  document.getElementById('btn-e').disabled = true;
+  document.getElementById('pw-e').style.display = 'block';
+
+  const r = await fetch('/api/events/search', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({city, max: parseInt(max)})
+  });
+  const {job_id} = await r.json();
+  pollJob(job_id, 'e', async () => {
+    await loadEvents();
+    renderEvents();
+    document.getElementById('btn-e').disabled = false;
+  });
+}
+
+async function doSearch(payload, prefix) {
+  document.getElementById(`btn-${prefix}`).disabled = true;
+  const pw = document.getElementById(`pw-${prefix}`);
+  pw.style.display = 'block';
+  pw.classList.add('busy');
+  const msg = document.getElementById(`pm-${prefix}`);
+  if (msg) msg.textContent = `Google Maps doorzoeken in ${payload.city || 'Nederland'}...`;
+
+  const r = await fetch('/api/search', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(payload)
+  });
+  const {job_id} = await r.json();
+  pollJob(job_id, prefix, async () => {
+    await loadLeads();
+    document.getElementById(`btn-${prefix}`).disabled = false;
+  });
+}
+
+function setBeer(prefix, pct) {
+  const fill = document.getElementById(`pf-${prefix}`);
+  const beer = document.getElementById(`pb-${prefix}`);
+  const pp   = document.getElementById(`pp-${prefix}`);
+  if (fill) fill.style.width = pct + '%';
+  if (beer) beer.style.left = `calc(${Math.min(pct, 92)}% - 4px)`;
+  if (pp)   pp.textContent = pct + '%';
+}
+
+function pollJob(job_id, prefix, onDone) {
+  let finished = false;
+  let visualPct = 5;
+  setBeer(prefix, visualPct);
+
+  const t = setInterval(async () => {
+    if (finished) { clearInterval(t); return; }
+
+    let job;
+    try {
+      const r = await fetch(`/api/job/${job_id}`);
+      job = await r.json();
+    } catch (e) {
+      visualPct = Math.min(visualPct + 1, 99);
+      setBeer(prefix, visualPct);
+      return;
+    }
+
+    const realPct = job.progress || 5;
+    visualPct = realPct > visualPct ? realPct : Math.min(visualPct + 1, 99);
+    setBeer(prefix, visualPct);
+
+    const msg = document.getElementById(`pm-${prefix}`);
+    if (msg) msg.textContent = job.message || '';
+
+    try { await loadLeads(); } catch(e) {}
+
+    if (job.status === 'done') {
+      finished = true;
+      clearInterval(t);
+      setBeer(prefix, 100);
+      document.getElementById(`pw-${prefix}`).classList.remove('busy');
+      setTimeout(() => { document.getElementById(`pw-${prefix}`).style.display = 'none'; }, 2000);
+      toast(`${job.count} resultaten gevonden!`);
+      onDone();
+    } else if (job.status === 'error' || job.status === 'not_found') {
+      finished = true;
+      clearInterval(t);
+      document.getElementById(`pw-${prefix}`).classList.remove('busy');
+      if (job.status === 'error') toast('Fout: ' + job.message, '#ef4444');
+      document.getElementById(`pw-${prefix}`).style.display = 'none';
+    }
+  }, 2000);
+}
+
+// ── Filter ────────────────────────────────────────────────────────────────────
+function setFilter(filter) {
+  activeFilter = filter;
+  renderLeads();
+}
+
+// ── Render leads ──────────────────────────────────────────────────────────────
+function renderLeads() {
+  const grid = document.getElementById('leads-grid');
+  let leads = allLeads;
+
+  // Tab filter (only apply when not in status-view mode and not showing all)
+  if (activeTab === 'sport') leads = leads.filter(l => l.type === 'sport');
+  else if (activeTab === 'business') leads = leads.filter(l => l.type !== 'sport');
+
+  if (activeFilter.startsWith('q-'))
+    leads = leads.filter(l => qualityKey(l) === activeFilter);
+
+  if (activeFilter.startsWith('status-')) {
+    const s = activeFilter.replace('status-', '');
+    leads = leads.filter(l => (l.status || 'nieuw') === s);
+  }
+
+  leads = applySort(leads);
+
+  if (!leads.length) {
+    const filterMsg = activeFilter !== 'all' && activeFilter !== 'sport' && activeFilter !== 'business'
+      ? `Geen leads gevonden met dit filter. Klik op <strong>Alle</strong> om alles te zien.`
+      : `Geen leads. Gebruik het zoekveld hierboven.`;
+    grid.innerHTML = `<div class="empty"><div class="empty-icon">🔍</div><div class="empty-text">${filterMsg}</div></div>`;
+    return;
+  }
+  grid.innerHTML = leads.map(cardHTML).join('');
+}
+
+function cardHTML(l) {
+  return l.type === 'sport' ? sportCardHTML(l) : businessCardHTML(l);
+}
+
+function qualityKey(l) {
+  let score = 0;
+  if (l.website) score++;
+  if (l.email) score++;
+  if (l.phone) score++;
+  if (l.type === 'sport' ? l.board_page : l.contact_person) score++;
+  if (score === 0) return 'q-low';
+  if (score <= 1)  return 'q-low';
+  if (score <= 2)  return 'q-mid';
+  if (score <= 3)  return 'q-high';
+  return 'q-full';
+}
+
+function leadQuality(l) {
+  const key = qualityKey(l);
+  const labels = { 'q-low': 'Weinig gevonden', 'q-mid': 'Gedeeltelijk', 'q-high': 'Goede lead', 'q-full': 'Volledig' };
+  return `<span class="badge ${key}">${labels[key]}</span>`;
+}
+
+function businessCardHTML(l) {
+  const img = l.screenshot
+    ? `<img class="card-img" src="/screenshots/${l.screenshot}" loading="lazy" alt="">`
+    : `<div class="card-no-img"><div class="card-no-img-icon">🍽️</div><span>${l.website ? 'Geen screenshot' : 'Geen website'}</span></div>`;
+
+  const web = l.website
+    ? `<a href="${l.website}" target="_blank">${l.website.replace(/^https?:\/\//,'').split('?')[0].substring(0,40)}</a>`
+    : `<span class="unfound">Geen website</span>`;
+
+  const email = l.email ? `<span class="found">${l.email}</span>` : `<span class="unfound">Niet gevonden</span>`;
+  const phone = l.phone ? `<span>${l.phone}</span>` : `<span class="unfound">Niet gevonden</span>`;
+  const contact = l.contact_person ? `<span class="found">${l.contact_person}</span>` : `<span class="unfound">Onbekend</span>`;
+  const rating = l.rating ? ` ★${l.rating}` : '';
+
+  return `<div class="card" id="card-${l.id}">
+    ${img}
+    <div class="card-body">
+      <div class="card-top">
+        <div>
+          <div class="card-name">${esc(l.name)}${rating}</div>
+          <div class="card-sub">${esc(l.niche)} · ${esc(l.city)}</div>
+        </div>
+        ${leadQuality(l)}
+      </div>
+      <div class="info-row"><span class="info-ic">📍</span><span class="info-val">${esc(l.address||'Onbekend')}</span></div>
+      <div class="info-row"><span class="info-ic">🌐</span><span class="info-val">${web}</span></div>
+      <div class="info-row"><span class="info-ic">📧</span><span class="info-val">${email}</span></div>
+      <div class="info-row"><span class="info-ic">📞</span><span class="info-val">${phone}</span></div>
+      <div style="margin-top:10px">${statusBadgeHTML(l)}</div>
+      <textarea class="note-area" placeholder="Notitie toevoegen..." oninput="onNoteInput('${l.id}', this)">${esc(l.note||'')}</textarea>
+      <div class="note-saved" id="note-saved-${l.id}">✓ Opgeslagen</div>
+      <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
+        <span style="font-size:0.78rem;color:#64748b">📅 Follow-up:</span>
+        <input type="date" class="followup-input" value="${l.followup_date||''}" onchange="saveFollowup('${l.id}', this.value)" />
+        ${l.followup_date ? '<button class="btn-sm" style="padding:2px 7px;font-size:0.72rem" onclick="saveFollowup(\'' + l.id + '\',\'\')">✕</button>' : ''}
+      </div>
+      <div class="card-actions">
+        <button class="btn-sm" onclick="showEmail('${l.id}')">📧 Email</button>
+        <button class="btn-sm secondary" onclick="rescrapeLead('${l.id}', this)">🔄 Opnieuw</button>
+        <button class="btn-sm danger" onclick="deleteLead('${l.id}')">Verwijder</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function sportCardHTML(l) {
+  const rating = l.rating ? ` ★${l.rating}` : '';
+
+  const img = l.screenshot
+    ? `<img class="card-img" src="/screenshots/${l.screenshot}" loading="lazy" alt="">`
+    : `<div class="card-no-img"><div class="card-no-img-icon">⚽</div><span>${l.website ? 'Geen screenshot' : 'Geen website'}</span></div>`;
+
+  const web = l.website
+    ? `<a href="${l.website}" target="_blank">${l.website.replace(/^https?:\/\//,'').split('?')[0].substring(0,40)}</a>`
+    : `<span class="unfound">Geen website</span>`;
+
+  const email = l.email ? `<span class="found">${l.email}</span>` : `<span class="unfound">Niet gevonden</span>`;
+  const phone = l.phone ? `<span>${l.phone}</span>` : `<span class="unfound">Niet gevonden</span>`;
+  const contact = l.contact_person ? `<span class="found">${l.contact_person}</span>` : `<span class="unfound">Onbekend</span>`;
+
+  const boardPageBtn = l.board_page
+    ? `<a href="${esc(l.board_page)}" target="_blank" class="board-page-btn">
+        <span style="opacity:1">📋 Bekijk bestuurspagina</span><span>→</span>
+      </a>`
+    : l.website
+      ? `<a href="${esc(l.website)}" target="_blank" class="board-page-btn board-page-btn-dim">
+          <span style="opacity:1">🌐 Open website</span><span>→</span>
+        </a>`
+      : '';
+
+  return `<div class="card sport-card" id="card-${l.id}">
+    ${img}
+    <div class="card-body">
+      <div class="card-top">
+        <div>
+          <div class="card-name">${esc(l.name)}${rating}</div>
+          <div class="card-sub">${esc(l.niche)} · ${esc(l.city)}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">
+          <span class="badge b-sport">Club</span>
+          ${leadQuality(l)}
+        </div>
+      </div>
+      <div class="info-row"><span class="info-ic">📍</span><span class="info-val">${esc(l.address||'Onbekend')}</span></div>
+      <div class="info-row"><span class="info-ic">🌐</span><span class="info-val">${web}</span></div>
+      <div class="info-row"><span class="info-ic">📧</span><span class="info-val">${email}</span></div>
+      <div class="info-row"><span class="info-ic">📞</span><span class="info-val">${phone}</span></div>
+      ${boardPageBtn ? `<div style="margin-top:10px">${boardPageBtn}</div>` : ''}
+      <div style="margin-top:10px">${statusBadgeHTML(l)}</div>
+      <textarea class="note-area" placeholder="Notitie toevoegen..." oninput="onNoteInput('${l.id}', this)">${esc(l.note||'')}</textarea>
+      <div class="note-saved" id="note-saved-${l.id}">✓ Opgeslagen</div>
+      <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
+        <span style="font-size:0.78rem;color:#64748b">📅 Follow-up:</span>
+        <input type="date" class="followup-input" value="${l.followup_date||''}" onchange="saveFollowup('${l.id}', this.value)" />
+        ${l.followup_date ? '<button class="btn-sm" style="padding:2px 7px;font-size:0.72rem" onclick="saveFollowup(\'' + l.id + '\',\'\')">✕</button>' : ''}
+      </div>
+      <div class="card-actions">
+        <button class="btn-sm" onclick="showEmail('${l.id}')">📧 Email schrijven</button>
+        <button class="btn-sm secondary" onclick="rescrapeLead('${l.id}', this)">🔄 Opnieuw</button>
+        <button class="btn-sm danger" onclick="deleteLead('${l.id}')">Verwijder</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderBoardPreview(board) {
+  const roles = Object.entries(board).slice(0, 4);
+  if (!roles.length) return '';
+  return `<div class="board-section">
+    <div class="board-title">Bestuur gevonden</div>
+    <div class="board-grid">
+      ${roles.map(([role, info]) => `
+        <div class="board-role">
+          <div class="board-role-name">${role}</div>
+          <div class="board-role-person">${info.name || '—'}</div>
+          ${info.email ? `<div class="board-role-email">${info.email}</div>` : ''}
+        </div>
+      `).join('')}
+    </div>
+  </div>`;
+}
+
+
+// ── Render events ─────────────────────────────────────────────────────────────
+function renderEvents() {
+  const grid = document.getElementById('events-grid');
+  if (!allEvents.length) {
+    grid.innerHTML = `<div class="empty"><div class="empty-icon">📅</div><div class="empty-text">Geen evenementen. Zoek hierboven.</div></div>`;
+    return;
+  }
+  grid.innerHTML = allEvents.map(e => `
+    <div class="event-card">
+      <div class="event-title">${esc(e.title)}</div>
+      ${e.date ? `<div class="event-date">📅 ${esc(e.date)}</div>` : ''}
+      <div class="event-meta">📍 ${esc(e.location||e.city)}</div>
+      ${e.organizer ? `<div class="event-meta">👤 ${esc(e.organizer)}</div>` : ''}
+      ${e.email ? `<div class="event-meta found">📧 ${esc(e.email)}</div>` : ''}
+      ${e.phone ? `<div class="event-meta">📞 ${esc(e.phone)}</div>` : ''}
+      <span class="event-source">${esc(e.source)}</span>
+      <div class="event-actions">
+        ${e.link ? `<a class="btn-sm" href="${e.link}" target="_blank" style="text-align:center;text-decoration:none">Bekijk</a>` : ''}
+        <button class="btn-sm danger" onclick="deleteEvent('${e.id}')">Verwijder</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ── Modals ────────────────────────────────────────────────────────────────────
+async function showEmail(id) {
+  const l = allLeads.find(x => x.id === id);
+  if (!l) return;
+  currentEmailLeadId = id;
+  document.getElementById('modal-name').textContent = l.name;
+  // Toon "Email verstuurd" alleen als nog niet gecontacteerd
+  const sentBtn = document.getElementById('btn-email-sent');
+  if ((l.status || 'nieuw') === 'gecontacteerd') {
+    sentBtn.textContent = '✓ Al verstuurd';
+    sentBtn.disabled = true;
+    sentBtn.style.background = '#94a3b8';
+  } else {
+    sentBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Email verstuurd';
+    sentBtn.disabled = false;
+    sentBtn.style.background = '#005826';
+  }
+  document.getElementById('modal-email').classList.add('open');
+  const iframe = document.getElementById('modal-iframe');
+  const res = await fetch(`/api/leads/${id}/email`);
+  const data = await res.json();
+  const emailContent = data.html || '<p>Geen email beschikbaar</p>';
+  const doc = iframe.contentDocument || iframe.contentWindow.document;
+  doc.open();
+  doc.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;padding:16px;font-family:Arial,sans-serif;font-size:14px}img{max-width:100%}table{max-width:600px!important;width:100%!important}td{max-width:none}</style><base target="_blank"></head><body><div style="max-width:600px;margin:0 auto">${emailContent}</div></body></html>`);
+  doc.close();
+  setTimeout(() => {
+    const d = iframe.contentDocument;
+    if (!d) return;
+    d.querySelectorAll('div').forEach(div => {
+      if (div.style.display === 'flex' && div.style.justifyContent === 'space-between') {
+        div.style.width = '100%';
+      }
+    });
+  }, 50);
+}
+
+function showBoard(id) {
+  const l = allLeads.find(x => x.id === id);
+  if (!l || !l.board) return;
+  document.getElementById('board-name').textContent = `Bestuur — ${l.name}`;
+  const roles = Object.entries(l.board);
+  if (!roles.length) {
+    document.getElementById('board-content').innerHTML = '<p style="color:#64748b;font-size:14px">Geen bestuursleden gevonden op de website.</p>';
+  } else {
+    document.getElementById('board-content').innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        ${roles.map(([role, info]) => `
+          <div style="background:var(--bg);border-radius:8px;padding:14px;border:1px solid var(--border)">
+            <div style="font-size:11px;color:#64748b;text-transform:capitalize;margin-bottom:4px">${esc(role)}</div>
+            <div style="font-size:15px;font-weight:600;color:#f1f5f9">${esc(info.name||'Onbekend')}</div>
+            ${info.email ? `<div style="font-size:12px;color:#4ade80;margin-top:4px">${esc(info.email)}</div>` : ''}
+          </div>
+        `).join('')}
+      </div>`;
+  }
+  document.getElementById('modal-board').classList.add('open');
+}
+
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+async function markEmailSent() {
+  if (!currentEmailLeadId) return;
+  await fetch(`/api/leads/${currentEmailLeadId}/status`, {
+    method: 'PATCH',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ status: 'gecontacteerd' })
+  });
+  const lead = allLeads.find(l => l.id === currentEmailLeadId);
+  if (lead) lead.status = 'gecontacteerd';
+  const btn = document.getElementById('btn-email-sent');
+  btn.textContent = '✓ Al verstuurd';
+  btn.disabled = true;
+  btn.style.background = '#94a3b8';
+  renderLeads(); updateStats();
+  toast('Status op gecontacteerd gezet!');
+}
+function copyEmailText() {
+  const iframe = document.getElementById('modal-iframe');
+  const doc = iframe.contentDocument;
+  if (!doc) return;
+  const lines = [];
+  doc.querySelectorAll('p').forEach(p => {
+    // Remove all images from a clone before reading text
+    const clone = p.cloneNode(true);
+    clone.querySelectorAll('img').forEach(img => img.remove());
+    const text = clone.innerText.trim();
+    // Skip empty lines and very short fragments (image alt text remnants)
+    if (text && text.length > 3) lines.push(text);
+  });
+  // Use single newline so Excel puts each paragraph on its own row
+  navigator.clipboard.writeText(lines.join('\n')).then(() => toast('Tekst gekopieerd!'));
+}
+
+function copyEmailHtml() {
+  const iframe = document.getElementById('modal-iframe');
+  const doc = iframe.contentDocument;
+  if (!doc) return;
+
+  // Get the inner email HTML (strip the iframe wrapper div)
+  const innerDiv = doc.body.querySelector('div') || doc.body;
+  const emailHtml = innerDiv.innerHTML;
+
+  // Parse and fix for Outlook (no flexbox support)
+  const parser = new DOMParser();
+  const parsed = parser.parseFromString(`<html><body>${emailHtml}</body></html>`, 'text/html');
+
+  // Convert flex logo wrappers to Outlook-compatible table layout
+  parsed.querySelectorAll('div').forEach(div => {
+    if (div.style.display === 'flex' && div.style.justifyContent === 'space-between') {
+      const span = div.querySelector('span');
+      const logo = div.querySelector('img');
+      if (span && logo) {
+        const table = parsed.createElement('table');
+        table.setAttribute('width', '100%');
+        table.setAttribute('cellpadding', '0');
+        table.setAttribute('cellspacing', '0');
+        table.setAttribute('border', '0');
+        const tr = parsed.createElement('tr');
+        const tdText = parsed.createElement('td');
+        tdText.setAttribute('valign', 'middle');
+        tdText.innerHTML = span.innerHTML;
+        const tdLogo = parsed.createElement('td');
+        tdLogo.setAttribute('valign', 'middle');
+        tdLogo.setAttribute('align', 'right');
+        tdLogo.setAttribute('width', '80');
+        tdLogo.appendChild(logo.cloneNode(true));
+        tr.appendChild(tdText);
+        tr.appendChild(tdLogo);
+        table.appendChild(tr);
+        div.replaceWith(table);
+      }
+    }
+  });
+
+  // Fix image widths for Outlook
+  parsed.querySelectorAll('img').forEach(img => {
+    const alt = img.getAttribute('alt') || '';
+    const src = img.getAttribute('src') || '';
+    const w = parseInt(img.getAttribute('width') || img.style.width || '0');
+    if (w <= 80) return;
+    if (alt === 'Heineken Horeca') {
+      img.setAttribute('width', '160');
+      img.removeAttribute('height');
+      img.setAttribute('style', 'width:160px;height:auto;display:block');
+    } else if (src.startsWith('data:')) {
+      img.setAttribute('width', '420');
+      img.removeAttribute('height');
+      img.setAttribute('style', 'width:420px;height:auto;display:block;max-width:100%');
+    }
+  });
+
+  // Wrap in Outlook-compatible 620px table
+  const bodyContent = parsed.body.innerHTML;
+  const outlookHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:0">
+<table width="620" cellpadding="0" cellspacing="0" border="0" style="width:620px;max-width:620px">
+<tr><td style="padding:0">${bodyContent}</td></tr>
+</table></body></html>`;
+
+  const htmlBlob = new Blob([outlookHtml], { type: 'text/html' });
+  const textBlob = new Blob([doc.body.innerText], { type: 'text/plain' });
+  navigator.clipboard.write([
+    new ClipboardItem({ 'text/html': htmlBlob, 'text/plain': textBlob })
+  ]).then(() => toast('Email gekopieerd — plak in Outlook!')).catch(() => {
+    navigator.clipboard.writeText(outlookHtml).then(() => toast('HTML gekopieerd!'));
+  });
+}
+
+// ── Delete ────────────────────────────────────────────────────────────────────
+async function deleteLead(id) {
+  await fetch(`/api/leads/${id}`, {method:'DELETE'});
+  allLeads = allLeads.filter(l => l.id !== id);
+  renderLeads(); updateStats();
+}
+
+// ── Gedeelde job poller ───────────────────────────────────────────────────────
+async function waitForJobCompletion(job_id, maxSeconds = 120) {
+  return new Promise(resolve => {
+    let elapsed = 0;
+    const t = setInterval(async () => {
+      elapsed += 1.5;
+      try {
+        const jr = await fetch(`/api/job/${job_id}`);
+        const job = await jr.json();
+        if (job.status === 'done' || job.status === 'error' || elapsed >= maxSeconds) {
+          clearInterval(t);
+          resolve(job);
+        }
+      } catch {
+        if (elapsed >= maxSeconds) { clearInterval(t); resolve({ status: 'error', count: 0 }); }
+      }
+    }, 1500);
+  });
+}
+
+// ── Rescrape ──────────────────────────────────────────────────────────────────
+async function rescrapeLead(id, btn) {
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ Bezig...';
+  try {
+    const res = await fetch(`/api/leads/${id}/rescrape`, {method:'POST'});
+    const {job_id} = await res.json();
+    const job = await waitForJobCompletion(job_id, 120);
+    if (job && job.lead) {
+      const idx = allLeads.findIndex(l => l.id === id);
+      if (idx !== -1) allLeads[idx] = job.lead;
+      renderLeads(); updateStats();
+      toast('Lead bijgewerkt!');
+    } else {
+      toast('Niets nieuws gevonden');
+    }
+  } catch(e) {
+    toast('Fout bij opnieuw scrapen');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
+}
+
+async function deleteEvent(id) {
+  await fetch(`/api/events/${id}`, {method:'DELETE'});
+  allEvents = allEvents.filter(e => e.id !== id);
+  renderEvents(); updateStats();
+}
+
+// ── Stats ─────────────────────────────────────────────────────────────────────
+function updateStats() {
+  const total = allLeads.length;
+  const clubs = allLeads.filter(l => l.type === 'sport').length;
+  const emails = allLeads.filter(l => l.email).length;
+  const byStatus = s => allLeads.filter(l => (l.status || 'nieuw') === s).length;
+
+  document.getElementById('s-total').textContent = total;
+  document.getElementById('s-missing').textContent = clubs;
+  document.getElementById('s-email').textContent = emails;
+  document.getElementById('s-events').textContent = allEvents.length;
+  document.getElementById('chip-total').textContent = `${total} leads`;
+  document.getElementById('chip-missing').textContent = `${clubs} clubs`;
+  document.getElementById('chip-email').textContent = `${emails} emails`;
+
+  document.getElementById('nc-all').textContent = total;
+  document.getElementById('nc-nieuw').textContent = byStatus('nieuw');
+  document.getElementById('nc-gecontacteerd').textContent = byStatus('gecontacteerd');
+  document.getElementById('nc-geinteresseerd').textContent = byStatus('geinteresseerd');
+  document.getElementById('nc-afgewezen').textContent = byStatus('afgewezen');
+}
+
+// ── Status ────────────────────────────────────────────────────────────────────
+const STATUS_LABELS = {
+  nieuw: '● Nieuw',
+  gecontacteerd: '✉ Gecontacteerd',
+  geinteresseerd: '★ Geïnteresseerd',
+  afgewezen: '✕ Afgewezen',
+};
+
+function statusBadgeHTML(lead) {
+  const s = lead.status || 'nieuw';
+  return `<button class="status-badge status-${s}" onclick="openStatusMenu(event,'${lead.id}')">${STATUS_LABELS[s]} ▾</button>`;
+}
+
+function openStatusMenu(e, id) {
+  e.stopPropagation();
+  document.querySelectorAll('.status-menu').forEach(m => m.remove());
+  const menu = document.createElement('div');
+  menu.className = 'status-menu';
+  menu.style.cssText = 'position:fixed;z-index:9999';
+  const rect = e.target.getBoundingClientRect();
+  menu.style.top = (rect.bottom + 4) + 'px';
+  menu.style.left = rect.left + 'px';
+  Object.entries(STATUS_LABELS).forEach(([val, label]) => {
+    const btn = document.createElement('button');
+    btn.textContent = label;
+    btn.onclick = () => { setStatus(id, val); menu.remove(); };
+    menu.appendChild(btn);
+  });
+  document.body.appendChild(menu);
+  setTimeout(() => document.addEventListener('click', () => menu.remove(), {once:true}), 0);
+}
+
+function toggleFilterMenu(btn) {
+  const menu = document.getElementById('filter-menu');
+  menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+  document.addEventListener('click', function handler(e) {
+    if (!btn.closest('div').contains(e.target)) {
+      menu.style.display = 'none';
+      document.removeEventListener('click', handler);
+    }
+  });
+}
+
+function updateFilterLabel(label) {
+  document.getElementById('filter-btn-label').textContent = `🔽 Filter: ${label} ▾`;
+  document.getElementById('filter-menu').style.display = 'none';
+}
+
+function toggleSortMenu(btn) {
+  const menu = document.getElementById('sort-menu');
+  menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+  document.addEventListener('click', function handler(e) {
+    if (!btn.closest('div').contains(e.target)) {
+      menu.style.display = 'none';
+      document.removeEventListener('click', handler);
+    }
+  });
+}
+
+const qualityScore = l => { let s=0; if(l.website)s++; if(l.email)s++; if(l.phone)s++; if(l.board_page||l.contact_person)s++; return s; };
+const statusOrder = { geinteresseerd:0, gecontacteerd:1, nieuw:2, afgewezen:3 };
+
+function setSort(sort) {
+  activeSort = sort;
+  document.getElementById('sort-menu').style.display = 'none';
+  document.querySelectorAll('[id^="sort-opt-"]').forEach(b => b.style.fontWeight = 'normal');
+  document.getElementById(`sort-opt-${sort}`).style.fontWeight = 'bold';
+  renderLeads();
+}
+
+function applySort(leads) {
+  const arr = [...leads];
+  if (activeSort === 'name') arr.sort((a,b) => (a.name||'').localeCompare(b.name||'', 'nl'));
+  else if (activeSort === 'quality') arr.sort((a,b) => qualityScore(b) - qualityScore(a));
+  else if (activeSort === 'status') arr.sort((a,b) => (statusOrder[a.status||'nieuw']||2) - (statusOrder[b.status||'nieuw']||2));
+  return arr;
+}
+
+function toggleExportMenu(btn) {
+  const menu = document.getElementById('export-menu');
+  menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+  document.addEventListener('click', function handler(e) {
+    if (!btn.closest('div').contains(e.target)) {
+      menu.style.display = 'none';
+      document.removeEventListener('click', handler);
+    }
+  });
+}
+
+function doExport(mode) {
+  document.getElementById('export-menu').style.display = 'none';
+  let leads = allLeads;
+  if (mode === 'view') {
+    if (activeTab === 'sport') leads = leads.filter(l => l.type === 'sport');
+    else if (activeTab === 'business') leads = leads.filter(l => l.type !== 'sport');
+    if (activeFilter.startsWith('q-')) leads = leads.filter(l => qualityKey(l) === activeFilter);
+    if (activeFilter.startsWith('status-')) leads = leads.filter(l => (l.status||'nieuw') === activeFilter.replace('status-',''));
+  } else if (mode !== 'all') {
+    leads = leads.filter(l => (l.status||'nieuw') === mode);
+  }
+  const ids = leads.map(l => l.id);
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = '/api/export';
+  const input = document.createElement('input');
+  input.type = 'hidden';
+  input.name = 'ids';
+  input.value = JSON.stringify(ids);
+  form.appendChild(input);
+  document.body.appendChild(form);
+  form.submit();
+  document.body.removeChild(form);
+}
+
+async function saveFollowup(leadId, date) {
+  await fetch(`/api/leads/${leadId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ followup_date: date })
+  });
+  const lead = allLeads.find(l => l.id === leadId);
+  if (lead) lead.followup_date = date;
+  renderLeads();
+  renderFollowupBanner();
+}
+
+function renderFollowupBanner() {
+  const today = new Date().toISOString().split('T')[0];
+  const due = allLeads.filter(l => l.followup_date && l.followup_date <= today);
+  const banner = document.getElementById('followup-banner');
+  const list = document.getElementById('followup-list');
+  if (!due.length) { banner.style.display = 'none'; return; }
+  banner.style.display = 'block';
+  list.innerHTML = due.map(l => {
+    const overdue = l.followup_date < today;
+    return `<div style="display:flex;align-items:center;gap:10px;font-size:0.82rem">
+      <span style="color:${overdue ? '#fca5a5' : '#4ade80'}">${overdue ? '⚠️ Te laat' : '📅 Vandaag'}</span>
+      <span style="color:#e2e8f0;font-weight:600">${esc(l.name)}</span>
+      <span style="color:#64748b">${esc(l.city)}</span>
+      ${l.note ? `<span style="color:#94a3b8;font-style:italic">"${esc(l.note.substring(0,50))}${l.note.length>50?'...':''}"</span>` : ''}
+      <button class="btn-sm" style="margin-left:auto;padding:2px 8px;font-size:0.72rem" onclick="saveFollowup('${l.id}','')">✓ Afgehandeld</button>
+    </div>`;
+  }).join('');
+}
+
+async function flushPendingNotes() {
+  const pending = Object.keys(noteTimers);
+  await Promise.all(pending.map(leadId => {
+    clearTimeout(noteTimers[leadId]);
+    delete noteTimers[leadId];
+    const textarea = document.querySelector(`#card-${leadId} .note-area`);
+    if (textarea) return saveNote(leadId, textarea);
+  }));
+}
+
+async function setStatus(id, status) {
+  await flushPendingNotes();
+  await fetch(`/api/leads/${id}/status`, {
+    method: 'PATCH',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({status})
+  });
+  const lead = allLeads.find(l => l.id === id);
+  if (lead) lead.status = status;
+  renderLeads();
+  updateStats();
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function toast(msg, color='#10b981') {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.style.background = color; t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', 3000);
+}
+
+// Close overlays on background click
+document.querySelectorAll('.overlay').forEach(o => o.addEventListener('click', e => { if(e.target===o) o.classList.remove('open'); }));
+
+// Enter key
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  const tag = document.activeElement.tagName;
+  if (tag !== 'INPUT') return;
+  if (activeTab === 'business') startBusinessSearch();
+  else if (activeTab === 'sport') startSportSearch();
+  else if (activeTab === 'events') startEventsSearch();
+});
+
+init();
+</script>
+</body>
+</html>
