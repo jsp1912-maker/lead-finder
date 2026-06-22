@@ -980,10 +980,9 @@ async function startExcelSearch(type, input) {
   }
 
   let done = 0, gevonden = 0, nietGevonden = [], log = [];
-  for (const name of names) {
-    setBeer(isSport ? 's' : 'b', Math.round((done / names.length) * 100));
-    document.getElementById(pmId).textContent = `Zoeken (${done + 1}/${names.length}): ${name}`;
+  const BATCH = 3;
 
+  async function processName(name) {
     // Stap 1: Google Maps
     const res = await fetch('/api/search', {
       method: 'POST',
@@ -991,32 +990,39 @@ async function startExcelSearch(type, input) {
       body: JSON.stringify({ niche: name, city: '', max_results: 1, force_type: type })
     });
     const { job_id } = await res.json();
-    const job = await waitForJob(job_id, 60);
+    const job = await waitForJob(job_id, 45);
 
     if ((job.count || 0) > 0) {
-      gevonden++;
-      log.push(`✓ ${name} — gevonden via Google Maps`);
-    } else {
-      // Stap 2: manual (Google Maps op naam + stad)
-      document.getElementById(pmId).textContent = `Nogmaals proberen: ${name}`;
-      const mr = await fetch('/api/leads/manual', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, force_type: type })
-      });
-      const { job_id: mjob_id } = await mr.json();
-      const mjob = await waitForJob(mjob_id, 60);
-
-      if ((mjob.count || 0) > 0) {
-        gevonden++;
-        log.push(`✓ ${name} — ${mjob.message || 'toegevoegd'}`);
-      } else {
-        nietGevonden.push(name);
-        log.push(`⚠ ${name} — ${mjob.message || 'niet gevonden'}`);
-      }
+      return { name, ok: true, msg: `✓ ${name} — gevonden via Google Maps` };
     }
+    // Stap 2: manual
+    const mr = await fetch('/api/leads/manual', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, force_type: type })
+    });
+    const { job_id: mjob_id } = await mr.json();
+    const mjob = await waitForJob(mjob_id, 45);
 
-    done++;
+    if ((mjob.count || 0) > 0) {
+      return { name, ok: true, msg: `✓ ${name} — ${mjob.message || 'toegevoegd'}` };
+    }
+    return { name, ok: false, msg: `⚠ ${name} — ${mjob.message || 'niet gevonden'}` };
+  }
+
+  for (let i = 0; i < names.length; i += BATCH) {
+    const batch = names.slice(i, i + BATCH);
+    setBeer(isSport ? 's' : 'b', Math.round((done / names.length) * 100));
+    document.getElementById(pmId).textContent = `Zoeken (${done + 1}–${Math.min(done + BATCH, names.length)}/${names.length}): ${batch[0]}...`;
+
+    const results = await Promise.all(batch.map(processName));
+    for (const r of results) {
+      if (r.ok) gevonden++;
+      else nietGevonden.push(r.name);
+      log.push(r.msg);
+      done++;
+    }
+    await loadLeads();
   }
 
   setBeer(isSport ? 's' : 'b', 100);

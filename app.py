@@ -1814,21 +1814,14 @@ def run_manual_lead_job(job_id: str, name: str, force_type: str, user_id: int = 
             pass
 
         gevonden_info = [v for v in ["website" if website else "", "email" if email else "", "telefoon" if phone else ""] if v]
-        details = ", ".join(gevonden_info) if gevonden_info else "geen gegevens gevonden"
+        details = ", ".join(gevonden_info) if gevonden_info else "weinig gevonden"
 
-        if website or phone or address:
-            add_lead(lead, user_id)
-            jobs[job_id] = {
-                "status": "done", "progress": 100,
-                "message": f"{result_name} toegevoegd via {method} ({details})",
-                "count": 1,
-            }
-        else:
-            jobs[job_id] = {
-                "status": "done", "progress": 100,
-                "message": f"{name} — niet gevonden op Google Maps",
-                "count": 0,
-            }
+        add_lead(lead, user_id)
+        jobs[job_id] = {
+            "status": "done", "progress": 100,
+            "message": f"{result_name} toegevoegd via {method} ({details})",
+            "count": 1,
+        }
     except Exception as e:
         # Zet job altijd op done zodat de frontend niet blijft hangen
         jobs[job_id] = {"status": "done", "progress": 100, "message": f"{name} — fout: {e}", "count": 0}
