@@ -471,6 +471,30 @@ def check_website(website: str) -> str:
         return "bad"
 
 
+# ── Cookie banner dismissal ───────────────────────────────────────────────────
+
+def _dismiss_cookie_banner(page) -> None:
+    """Try to click common cookie accept buttons so they don't block screenshots."""
+    accept_texts = [
+        "toestaan", "accepteren", "accept", "alle cookies accepteren",
+        "akkoord", "ok", "agree", "allow all", "allow cookies",
+        "ik ga akkoord", "ja, ik ga akkoord", "cookies toestaan",
+        "alles accepteren", "accept all", "alle accepteren",
+    ]
+    try:
+        buttons = page.query_selector_all("button, a[role='button'], input[type='button'], input[type='submit']")
+        for btn in buttons:
+            try:
+                text = (btn.inner_text() or "").strip().lower()
+                if any(t in text for t in accept_texts):
+                    btn.click(timeout=1000)
+                    return
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+
 # ── Screenshot ────────────────────────────────────────────────────────────────
 
 def take_screenshot(website: str, lead_id: str) -> str:
@@ -493,6 +517,8 @@ def take_screenshot(website: str, lead_id: str) -> str:
             page = context.new_page()
             page.goto(url, wait_until="domcontentloaded", timeout=15000)
             page.wait_for_timeout(1000)
+            _dismiss_cookie_banner(page)
+            page.wait_for_timeout(500)
             page.screenshot(path=filepath, full_page=False)
             browser.close()
         return filename
