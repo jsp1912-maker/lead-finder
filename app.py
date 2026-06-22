@@ -1269,6 +1269,8 @@ def run_search_job(job_id: str, niche: str, city: str, max_results: int, force_t
         with ThreadPoolExecutor(max_workers=4) as executor:
             futures = {executor.submit(process_lead, b): b for b in candidate_pool}
             for future in as_completed(futures, timeout=MAX_JOB_SECONDS):
+                if len(saved_leads) >= max_results:
+                    break
                 if time.time() - start_time > MAX_JOB_SECONDS:
                     jobs[job_id] = {"status": "done", "progress": 100, "message": f"Timeout — {len(saved_leads)} leads gevonden", "count": len(saved_leads)}
                     return
