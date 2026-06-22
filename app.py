@@ -11,12 +11,35 @@ from difflib import SequenceMatcher
 
 import requests
 from bs4 import BeautifulSoup
-from flask import Flask, jsonify, render_template, request, send_from_directory
+from flask import Flask, jsonify, redirect, render_template, request, send_from_directory, url_for
+from flask_login import LoginManager, current_user, login_required, login_user, logout_user
 from playwright.sync_api import sync_playwright
 from playwright_stealth import Stealth
 
+from models import Lead, User, db
+
 app = Flask(__name__)
 app.config['TEMPLATES_AUTO_RELOAD'] = True
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-change-in-production')
+
+DATABASE_URL = os.environ.get('DATABASE_URL', '')
+if DATABASE_URL.startswith('postgres://'):
+    DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL or 'sqlite:///leads.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+db.init_app(app)
+
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login_page'
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
+
+with app.app_context():
+    db.create_all()
 
 SCREENSHOTS_DIR = os.path.join(os.path.dirname(__file__), "screenshots")
 DATA_FILE = os.path.join(os.path.dirname(__file__), "leads_db.json")
@@ -77,22 +100,39 @@ def delete_email(lead_id: str):
         os.remove(path)
 
 
-def _load_leads_unsafe():
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return []
+def _load_leads_unsafe(user_id=None):
+    if user_id is None:
+        if os.path.exists(DATA_FILE):
+            with open(DATA_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        return []
+    rows = Lead.query.filter_by(user_id=user_id).order_by(Lead.created_at.desc()).all()
+    return [row.data for row in rows]
 
 
-def _save_leads_unsafe(leads):
-    slim = [{k: v for k, v in l.items() if k != "cold_email"} for l in leads]
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(slim, f, ensure_ascii=False, indent=2)
+def _save_leads_unsafe(leads, user_id=None):
+    if user_id is None:
+        slim = [{k: v for k, v in l.items() if k != "cold_email"} for l in leads]
+        with open(DATA_FILE, "w", encoding="utf-8") as f:
+            json.dump(slim, f, ensure_ascii=False, indent=2)
+        return
+    existing_ids = {row.id: row for row in Lead.query.filter_by(user_id=user_id).all()}
+    new_ids = {l["id"] for l in leads}
+    for lead_id in list(existing_ids.keys()):
+        if lead_id not in new_ids:
+            db.session.delete(existing_ids[lead_id])
+    for lead in leads:
+        slim = {k: v for k, v in lead.items() if k != "cold_email"}
+        if lead["id"] in existing_ids:
+            existing_ids[lead["id"]].data = slim
+        else:
+            db.session.add(Lead(id=lead["id"], user_id=user_id, data=slim))
+    db.session.commit()
 
 
-def load_leads():
+def load_leads(user_id=None):
     with _leads_lock:
-        leads = _load_leads_unsafe()
+        leads = _load_leads_unsafe(user_id)
 
     changed = False
     for lead in leads:
@@ -106,27 +146,27 @@ def load_leads():
 
     if changed:
         with _leads_lock:
-            _save_leads_unsafe(leads)
+            _save_leads_unsafe(leads, user_id)
 
     return leads
 
 
-def save_leads(leads):
+def save_leads(leads, user_id=None):
     with _leads_lock:
-        _save_leads_unsafe(leads)
+        _save_leads_unsafe(leads, user_id)
 
 
-def add_lead(lead: dict) -> bool:
+def add_lead(lead: dict, user_id=None) -> bool:
     """Voeg een lead toe. Returns False als het een duplicaat is."""
     with _leads_lock:
-        leads = _load_leads_unsafe()
+        leads = _load_leads_unsafe(user_id)
         lead_city = lead.get("city", "").lower().strip()
         for existing in leads:
             if existing.get("city", "").lower().strip() == lead_city:
                 if _names_similar(lead["name"], existing["name"]):
                     return False
         leads.insert(0, lead)
-        _save_leads_unsafe(leads)
+        _save_leads_unsafe(leads, user_id)
         return True
 
 
@@ -1120,7 +1160,7 @@ def scrape_lead_details(b: dict, is_sport: bool = False):
     b["cold_email"] = ""
 
 
-def run_search_job(job_id: str, niche: str, city: str, max_results: int, force_type: str = None, radius: int = 0):
+def run_search_job(job_id: str, niche: str, city: str, max_results: int, force_type: str = None, radius: int = 0, user_id: int = None):
     jobs[job_id] = {"status": "running", "progress": 0, "message": "Google Maps doorzoeken..."}
     try:
         if force_type == "sport":
@@ -1130,7 +1170,7 @@ def run_search_job(job_id: str, niche: str, city: str, max_results: int, force_t
         else:
             sport = is_sport(niche)
 
-        existing_leads = load_leads()
+        existing_leads = load_leads(user_id)
         existing_names_by_city: dict[str, list[str]] = {}
         for l in existing_leads:
             c = l.get("city", "").lower().strip()
@@ -1195,7 +1235,7 @@ def run_search_job(job_id: str, niche: str, city: str, max_results: int, force_t
             scrape_lead_details(b, is_sport=sport)
             with lock:
                 completed[0] += 1
-                if add_lead(b):
+                if add_lead(b, user_id):
                     saved_leads.append(b)
                 jobs[job_id]["progress"] = 30 + int((completed[0] / max(total, 1)) * 70)
                 jobs[job_id]["message"] = f"{completed[0]}/{total} leads verwerkt..."
@@ -1233,12 +1273,55 @@ def run_events_job(job_id: str, city: str, max_results: int):
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
+@app.route("/login", methods=["GET", "POST"])
+def login_page():
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+        user = User.query.filter_by(email=email).first()
+        if user and user.check_password(password):
+            login_user(user)
+            return redirect(url_for('index'))
+        return render_template("login.html", error="Ongeldig e-mailadres of wachtwoord")
+    return render_template("login.html")
+
+
+@app.route("/register", methods=["GET", "POST"])
+def register_page():
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        email = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+        if User.query.filter_by(email=email).first():
+            return render_template("register.html", error="Dit e-mailadres is al in gebruik")
+        user = User(name=name, email=email)
+        user.set_password(password)
+        db.session.add(user)
+        db.session.commit()
+        login_user(user)
+        return redirect(url_for('index'))
+    return render_template("register.html")
+
+
+@app.route("/logout")
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for('login_page'))
+
+
 @app.route("/")
+@login_required
 def index():
     return render_template("index.html")
 
 
 @app.route("/api/search", methods=["POST"])
+@login_required
 def search():
     data = request.json
     niche = data.get("niche", "").strip()
@@ -1249,7 +1332,7 @@ def search():
     if not niche:
         return jsonify({"error": "Vul een naam of niche in"}), 400
     job_id = str(uuid.uuid4())
-    _job_executor.submit(run_search_job, job_id, niche, city, max_results, force_type, radius)
+    _job_executor.submit(run_search_job, job_id, niche, city, max_results, force_type, radius, current_user.id)
     return jsonify({"job_id": job_id})
 
 
@@ -1271,8 +1354,9 @@ def job_status(job_id):
 
 
 @app.route("/api/leads")
+@login_required
 def get_leads():
-    leads = load_leads()
+    leads = load_leads(current_user.id)
     status_filter = request.args.get("status")
     type_filter = request.args.get("type")
     if status_filter:
@@ -1283,43 +1367,48 @@ def get_leads():
 
 
 @app.route("/api/leads/<lead_id>", methods=["PATCH"])
+@login_required
 def update_lead(lead_id):
-    leads = load_leads()
+    leads = load_leads(current_user.id)
     data = request.json
     for lead in leads:
         if lead["id"] == lead_id:
             lead.update(data)
             break
-    save_leads(leads)
+    save_leads(leads, current_user.id)
     return jsonify({"ok": True})
 
 
 @app.route("/api/leads/<lead_id>/status", methods=["PATCH"])
+@login_required
 def update_lead_status(lead_id):
-    leads = load_leads()
+    leads = load_leads(current_user.id)
     status = request.json.get("status", "nieuw")
     for lead in leads:
         if lead["id"] == lead_id:
             lead["status"] = status
             break
-    save_leads(leads)
+    save_leads(leads, current_user.id)
     return jsonify({"ok": True})
 
 
 @app.route("/api/leads/<lead_id>/email")
+@login_required
 def get_lead_email(lead_id):
     return jsonify({"html": load_email(lead_id)})
 
 
 @app.route("/api/leads/<lead_id>", methods=["DELETE"])
+@login_required
 def delete_lead(lead_id):
-    leads = [l for l in load_leads() if l["id"] != lead_id]
-    save_leads(leads)
+    leads = [l for l in load_leads(current_user.id) if l["id"] != lead_id]
+    save_leads(leads, current_user.id)
     delete_email(lead_id)
     return jsonify({"ok": True})
 
 
 @app.route("/api/leads/<lead_id>/rescrape", methods=["POST"])
+@login_required
 def rescrape_lead(lead_id):
     job_id = str(uuid.uuid4())
     jobs[job_id] = {"status": "running", "progress": 0, "message": "Opnieuw scrapen..."}
@@ -1442,6 +1531,7 @@ def screenshot_file(filename):
 
 
 @app.route("/api/export", methods=["POST"])
+@login_required
 def export_leads():
     import json as _json
     import io
@@ -1490,6 +1580,7 @@ def export_leads():
 
 
 @app.route("/api/upload-excel", methods=["POST"])
+@login_required
 def upload_excel():
     file = request.files.get("file")
     if not file:
@@ -1529,12 +1620,12 @@ def _extract_city_from_name(name: str) -> str:
     return ""
 
 
-def run_manual_lead_job(job_id: str, name: str, force_type: str):
+def run_manual_lead_job(job_id: str, name: str, force_type: str, user_id: int = None):
     """Zoek een club via Google Maps of DuckDuckGo. Voegt ALTIJD toe, ook zonder website."""
     jobs[job_id] = {"status": "running", "progress": 5, "message": f"Zoeken naar {name}...", "count": 0}
     try:
         # Duplicate check — alleen exacte of zeer sterke match
-        leads = load_leads()
+        leads = load_leads(user_id)
         existing_names = [l["name"] for l in leads]
         if any(_names_similar(name, n) for n in existing_names):
             jobs[job_id] = {"status": "done", "progress": 100, "message": f"{name} — al in database", "count": 0}
@@ -1652,7 +1743,7 @@ def run_manual_lead_job(job_id: str, name: str, force_type: str):
         details = ", ".join(gevonden_info) if gevonden_info else "geen gegevens gevonden"
 
         if website or phone or address:
-            add_lead(lead)
+            add_lead(lead, user_id)
             jobs[job_id] = {
                 "status": "done", "progress": 100,
                 "message": f"{result_name} toegevoegd via {method} ({details})",
@@ -1670,6 +1761,7 @@ def run_manual_lead_job(job_id: str, name: str, force_type: str):
 
 
 @app.route("/api/leads/manual", methods=["POST"])
+@login_required
 def add_manual_lead():
     """Start een job die de club zoekt via DuckDuckGo en scrapet."""
     data = request.json or {}
@@ -1680,7 +1772,7 @@ def add_manual_lead():
 
     job_id = str(uuid.uuid4())
     jobs[job_id] = {"status": "running", "progress": 0, "message": "Starten...", "count": 0}
-    _job_executor.submit(run_manual_lead_job, job_id, name, force_type)
+    _job_executor.submit(run_manual_lead_job, job_id, name, force_type, current_user.id)
     return jsonify({"job_id": job_id})
 
 

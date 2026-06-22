@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Registreren — Lead Finder</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #f5f5f5; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .card { background: white; border-radius: 12px; padding: 40px; width: 100%; max-width: 400px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
+    h1 { font-size: 1.5rem; margin-bottom: 8px; color: #1a1a1a; }
+    p.sub { color: #666; margin-bottom: 28px; font-size: 0.9rem; }
+    label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; color: #333; }
+    input { width: 100%; padding: 10px 14px; border: 1.5px solid #ddd; border-radius: 8px; font-size: 0.95rem; margin-bottom: 18px; outline: none; transition: border 0.2s; }
+    input:focus { border-color: #2d6a4f; }
+    button { width: 100%; padding: 12px; background: #2d6a4f; color: white; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; }
+    button:hover { background: #1b4332; }
+    .link { text-align: center; margin-top: 20px; font-size: 0.85rem; color: #666; }
+    .link a { color: #2d6a4f; text-decoration: none; font-weight: 600; }
+    .error { background: #fee2e2; color: #991b1b; padding: 10px 14px; border-radius: 8px; margin-bottom: 18px; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Account aanmaken</h1>
+    <p class="sub">Maak een gratis account aan</p>
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+    <form method="POST" action="/register">
+      <label>Naam</label>
+      <input type="text" name="name" placeholder="Jouw naam" required autofocus>
+      <label>E-mailadres</label>
+      <input type="email" name="email" placeholder="jouw@email.nl" required>
+      <label>Wachtwoord</label>
+      <input type="password" name="password" placeholder="Minimaal 8 tekens" required minlength="8">
+      <button type="submit">Account aanmaken</button>
+    </form>
+    <div class="link">Al een account? <a href="/login">Inloggen</a></div>
+  </div>
+</body>
+</html>
