@@ -662,6 +662,7 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--bg); color:var
 
 <script>
 let allLeads = [];
+let _cancelExcel = false;
 let allEvents = [];
 let activeFilter = 'all';
 let activeTab = 'business';
@@ -948,6 +949,7 @@ async function startExcelSearch(type, input) {
   const file = input.files[0];
   if (!file) return;
   input.value = '';
+  _cancelExcel = false;
 
   const isSport = type === 'sport';
   const pwId = isSport ? 'pw-s' : 'pw-b';
@@ -994,9 +996,11 @@ async function startExcelSearch(type, input) {
   }
 
   let done = 0, gevonden = 0, nietGevonden = [], log = [];
-  const BATCH = 3;
+  for (const name of names) {
+    if (_cancelExcel) break;
+    setBeer(isSport ? 's' : 'b', Math.round((done / names.length) * 100));
+    document.getElementById(pmId).textContent = `Zoeken (${done + 1}/${names.length}): ${name}`;
 
-  async function processName(name) {
     // Stap 1: Google Maps
     const res = await fetch('/api/search', {
       method: 'POST',
@@ -1007,35 +1011,28 @@ async function startExcelSearch(type, input) {
     const job = await waitForJob(job_id, 45);
 
     if ((job.count || 0) > 0) {
-      return { name, ok: true, msg: `✓ ${name} — gevonden via Google Maps` };
-    }
-    // Stap 2: manual
-    const mr = await fetch('/api/leads/manual', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, force_type: type })
-    });
-    const { job_id: mjob_id } = await mr.json();
-    const mjob = await waitForJob(mjob_id, 45);
+      gevonden++;
+      log.push(`✓ ${name} — gevonden via Google Maps`);
+    } else {
+      // Stap 2: manual
+      document.getElementById(pmId).textContent = `Nogmaals proberen: ${name}`;
+      const mr = await fetch('/api/leads/manual', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, force_type: type })
+      });
+      const { job_id: mjob_id } = await mr.json();
+      const mjob = await waitForJob(mjob_id, 45);
 
-    if ((mjob.count || 0) > 0) {
-      return { name, ok: true, msg: `✓ ${name} — ${mjob.message || 'toegevoegd'}` };
+      if ((mjob.count || 0) > 0) {
+        gevonden++;
+        log.push(`✓ ${name} — ${mjob.message || 'toegevoegd'}`);
+      } else {
+        nietGevonden.push(name);
+        log.push(`⚠ ${name} — ${mjob.message || 'niet gevonden'}`);
+      }
     }
-    return { name, ok: false, msg: `⚠ ${name} — ${mjob.message || 'niet gevonden'}` };
-  }
-
-  for (let i = 0; i < names.length; i += BATCH) {
-    const batch = names.slice(i, i + BATCH);
-    setBeer(isSport ? 's' : 'b', Math.round((done / names.length) * 100));
-    document.getElementById(pmId).textContent = `Zoeken (${done + 1}–${Math.min(done + BATCH, names.length)}/${names.length}): ${batch[0]}...`;
-
-    const results = await Promise.all(batch.map(processName));
-    for (const r of results) {
-      if (r.ok) gevonden++;
-      else nietGevonden.push(r.name);
-      log.push(r.msg);
-      done++;
-    }
+    done++;
     await loadLeads();
   }
 
@@ -1132,11 +1129,12 @@ function setBeer(prefix, pct) {
 let _currentJobId = {};
 
 async function cancelSearch(prefix) {
+  _cancelExcel = true;
   const job_id = _currentJobId[prefix];
-  if (!job_id) return;
-  await fetch(`/api/job/${job_id}/cancel`, { method: 'POST' });
+  if (job_id) await fetch(`/api/job/${job_id}/cancel`, { method: 'POST' });
   document.getElementById(`pw-${prefix}`).style.display = 'none';
-  document.getElementById(`btn-${prefix}`) && (document.getElementById(`btn-${prefix}`).disabled = false);
+  const btn = document.getElementById(`btn-${prefix}`);
+  if (btn) btn.disabled = false;
   toast('Zoeken gestopt', '#f59e0b');
 }
 
