@@ -1395,6 +1395,7 @@ def search():
 
 
 @app.route("/api/events/search", methods=["POST"])
+@login_required
 def events_search():
     data = request.json
     city = data.get("city", "").strip()
@@ -1471,9 +1472,11 @@ def rescrape_lead(lead_id):
     job_id = str(uuid.uuid4())
     jobs[job_id] = {"status": "running", "progress": 0, "message": "Opnieuw scrapen..."}
 
+    uid = current_user.id
+
     def _run():
         try:
-            leads = load_leads()
+            leads = load_leads(uid)
             lead = next((l for l in leads if l["id"] == lead_id), None)
             if not lead:
                 jobs[job_id] = {"status": "error", "message": "Lead niet gevonden"}
@@ -1556,12 +1559,12 @@ def rescrape_lead(lead_id):
                 pass
 
             with _leads_lock:
-                all_leads = _load_leads_unsafe()
+                all_leads = _load_leads_unsafe(uid)
                 for i, l in enumerate(all_leads):
                     if l["id"] == lead_id:
                         all_leads[i] = lead
                         break
-                _save_leads_unsafe(all_leads)
+                _save_leads_unsafe(all_leads, uid)
 
             jobs[job_id] = {"status": "done", "progress": 100, "message": "Klaar!", "lead": lead}
         except Exception as e:
@@ -1572,11 +1575,13 @@ def rescrape_lead(lead_id):
 
 
 @app.route("/api/events")
+@login_required
 def get_events():
     return jsonify(load_events())
 
 
 @app.route("/api/events/<event_id>", methods=["DELETE"])
+@login_required
 def delete_event(event_id):
     events = [e for e in load_events() if e["id"] != event_id]
     save_events(events)
@@ -1584,6 +1589,7 @@ def delete_event(event_id):
 
 
 @app.route("/screenshots/<filename>")
+@login_required
 def screenshot_file(filename):
     return send_from_directory(SCREENSHOTS_DIR, filename)
 
@@ -1596,7 +1602,7 @@ def export_leads():
     import openpyxl
     from flask import send_file
     ids = set(_json.loads(request.form.get("ids", "[]")))
-    leads = [l for l in load_leads() if l["id"] in ids]
+    leads = [l for l in load_leads(current_user.id) if l["id"] in ids]
 
     wb = openpyxl.Workbook()
     ws = wb.active
