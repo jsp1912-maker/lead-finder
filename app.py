@@ -322,10 +322,14 @@ def scrape_google_maps(niche: str, city: str, max_results: int) -> list:
             viewport={"width": 1280, "height": 800},
         )
         page = context.new_page()
-        page.goto(
-            f"https://www.google.com/maps/search/{query.replace(' ', '+')}",
-            wait_until="domcontentloaded", timeout=60000
-        )
+        try:
+            page.goto(
+                f"https://www.google.com/maps/search/{query.replace(' ', '+')}",
+                wait_until="domcontentloaded", timeout=30000
+            )
+        except Exception:
+            browser.close()
+            return results
         page.wait_for_timeout(1200)
 
         for text in ["Alles accepteren", "Accept all", "Akkoord"]:
@@ -1164,6 +1168,9 @@ def scrape_lead_details(b: dict, is_sport: bool = False):
 
 def run_search_job(job_id: str, niche: str, city: str, max_results: int, force_type: str = None, radius: int = 0, user_id: int = None):
     jobs[job_id] = {"status": "running", "progress": 0, "message": "Google Maps doorzoeken..."}
+    import time
+    start_time = time.time()
+    MAX_JOB_SECONDS = 180
     try:
         if force_type == "sport":
             sport = True
@@ -1251,7 +1258,10 @@ def run_search_job(job_id: str, niche: str, city: str, max_results: int, force_t
 
         with ThreadPoolExecutor(max_workers=4) as executor:
             futures = {executor.submit(process_lead, b): b for b in candidate_pool}
-            for future in as_completed(futures):
+            for future in as_completed(futures, timeout=MAX_JOB_SECONDS):
+                if time.time() - start_time > MAX_JOB_SECONDS:
+                    jobs[job_id] = {"status": "done", "progress": 100, "message": f"Timeout — {len(saved_leads)} leads gevonden", "count": len(saved_leads)}
+                    return
                 try:
                     future.result()
                 except Exception:
