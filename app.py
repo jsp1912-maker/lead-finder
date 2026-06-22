@@ -25,6 +25,16 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-change-in-pr
 DATABASE_URL = os.environ.get('DATABASE_URL', '')
 if DATABASE_URL.startswith('postgres://'):
     DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+
+if not DATABASE_URL:
+    pghost = os.environ.get('PGHOST', '')
+    pgport = os.environ.get('PGPORT', '5432')
+    pguser = os.environ.get('PGUSER', '')
+    pgpassword = os.environ.get('PGPASSWORD', '')
+    pgdatabase = os.environ.get('PGDATABASE', '')
+    if pghost and pguser:
+        DATABASE_URL = f"postgresql://{pguser}:{pgpassword}@{pghost}:{pgport}/{pgdatabase}"
+
 app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL or 'sqlite:///leads.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
