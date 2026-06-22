@@ -498,11 +498,10 @@ def _dismiss_cookie_banner(page) -> None:
 # ── Screenshot ────────────────────────────────────────────────────────────────
 
 def take_screenshot(website: str, lead_id: str) -> str:
+    import base64
     if not website:
         return ""
     url = website if website.startswith("http") else f"https://{website}"
-    filename = f"{lead_id}.png"
-    filepath = os.path.join(SCREENSHOTS_DIR, filename)
     try:
         with Stealth().use_sync(sync_playwright()) as p:
             browser = p.chromium.launch(headless=True, args=[
@@ -519,9 +518,10 @@ def take_screenshot(website: str, lead_id: str) -> str:
             page.wait_for_timeout(1000)
             _dismiss_cookie_banner(page)
             page.wait_for_timeout(500)
-            page.screenshot(path=filepath, full_page=False)
+            img_bytes = page.screenshot(full_page=False)
             browser.close()
-        return filename
+        b64 = base64.b64encode(img_bytes).decode("utf-8")
+        return f"data:image/png;base64,{b64}"
     except Exception:
         return ""
 
@@ -1601,7 +1601,10 @@ def delete_event(event_id):
 @app.route("/screenshots/<filename>")
 @login_required
 def screenshot_file(filename):
-    return send_from_directory(SCREENSHOTS_DIR, filename)
+    filepath = os.path.join(SCREENSHOTS_DIR, filename)
+    if os.path.exists(filepath):
+        return send_from_directory(SCREENSHOTS_DIR, filename)
+    return "", 404
 
 
 @app.route("/api/export", methods=["POST"])
@@ -1698,11 +1701,11 @@ def run_manual_lead_job(job_id: str, name: str, force_type: str, user_id: int = 
     """Zoek een club via Google Maps of DuckDuckGo. Voegt ALTIJD toe, ook zonder website."""
     jobs[job_id] = {"status": "running", "progress": 5, "message": f"Zoeken naar {name}...", "count": 0}
     try:
-        # Duplicate check — alleen exacte of zeer sterke match
+        # Duplicate check — sla over als de lead al goede info heeft
         leads = load_leads(user_id)
-        existing_names = [l["name"] for l in leads]
-        if any(_names_similar(name, n) for n in existing_names):
-            jobs[job_id] = {"status": "done", "progress": 100, "message": f"{name} — al in database", "count": 0}
+        existing = next((l for l in leads if _names_similar(name, l["name"])), None)
+        if existing and (existing.get("website") or existing.get("email") or existing.get("phone")):
+            jobs[job_id] = {"status": "done", "progress": 100, "message": f"{name} — al in database", "count": 1}
             return
 
         extracted_city = _extract_city_from_name(name)
