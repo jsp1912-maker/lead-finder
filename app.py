@@ -665,14 +665,19 @@ def find_phone_from_website(website: str) -> str:
             for a in soup.find_all("a", href=True):
                 href = a["href"]
                 if href.startswith("tel:"):
-                    number = href[4:].strip().replace(" ", "").replace("-", "")
+                    number = re.sub(r"[\s\-\(\)]", "", href[4:].strip())
                     if len(number) >= 10:
-                        return a.get_text(strip=True) or href[4:].strip()
+                        if number.startswith("0"):
+                            number = "+31" + number[1:]
+                        return number
             # Dan regex op de paginatekst
             text = soup.get_text()
             match = phone_pattern.search(text)
             if match:
-                return match.group(1).strip()
+                number = re.sub(r"[\s\-]", "", match.group(1).strip())
+                if number.startswith("0"):
+                    number = "+31" + number[1:]
+                return number
         except Exception:
             continue
     return ""
@@ -697,8 +702,11 @@ def find_email_and_contact(website: str) -> tuple:
         base + "/bestuur",
     ]
     email_pattern = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
-    junk = ["example", "sentry", "wix", "wordpress", "schema", ".png", ".jpg", "noreply", "privacy"]
-    fake_contacts = {"to let", "te huur", "te koop", "for sale", "for rent", "n/a", "info", "contact", "admin", "unknown"}
+    junk = ["example", "sentry", "wix", "wordpress", "schema", ".png", ".jpg", "noreply",
+            "privacy", "squarespace", "shopify", "weebly", "jimdo", "hostinger",
+            "google", "facebook", "instagram", "twitter", "support@", "no-reply", "donotreply"]
+    fake_contacts = {"to let", "te huur", "te koop", "for sale", "for rent", "n/a", "info",
+                     "contact", "admin", "unknown", "webmaster", "hello", "team", "service"}
 
     name_patterns = [
         re.compile(r"(?:eigenaar|owner|directeur|manager|contact|ceo|founder)[:\s]+([A-Z][a-z]+(?:\s[A-Z][a-z]+)?)", re.IGNORECASE),
@@ -1175,12 +1183,12 @@ def guess_club_website(name: str) -> str:
 def _names_similar(a: str, b: str, threshold: float = 0.82) -> bool:
     """True als twee namen waarschijnlijk dezelfde zaak/club zijn."""
     a, b = a.lower().strip(), b.lower().strip()
+    # Strip suffixen VOOR vergelijking
+    for suffix in [" b.v.", " bv", " v.o.f.", " vof", " stichting", " vereniging", " e.o.", " e.v."]:
+        a = a.removesuffix(suffix).strip()
+        b = b.removesuffix(suffix).strip()
     if a == b:
         return True
-    # Strip veel voorkomende suffixen zodat "FC Utrecht" == "FC Utrecht B.V."
-    for suffix in [" b.v.", " bv", " v.o.f.", " vof", " stichting", " vereniging"]:
-        a = a.removesuffix(suffix)
-        b = b.removesuffix(suffix)
     return SequenceMatcher(None, a, b).ratio() >= threshold
 
 
@@ -1412,6 +1420,14 @@ def job_status(job_id):
     return jsonify(jobs.get(job_id, {"status": "not_found"}))
 
 
+@app.route("/api/job/<job_id>/cancel", methods=["POST"])
+@login_required
+def cancel_job(job_id):
+    if job_id in jobs and jobs[job_id].get("status") == "running":
+        jobs[job_id] = {"status": "cancelled", "progress": 0, "message": "Gestopt door gebruiker", "count": 0}
+    return jsonify({"ok": True})
+
+
 @app.route("/api/leads")
 @login_required
 def get_leads():
@@ -1503,7 +1519,7 @@ def rescrape_lead(lead_id):
                 bare_name = _CLUB_PREFIXES.sub("", name).strip()
                 bare_name_no_de = re.sub(r"^(de|het|den|'t)\s+", "", bare_name, flags=re.IGNORECASE).strip()
                 queries = [
-                    (name, extracted_city), (f"tennis {bare_name}", extracted_city),
+                    (name, extracted_city),
                     (bare_name, extracted_city), (bare_name_no_de, extracted_city),
                     (name, ""), (bare_name, ""),
                 ]
@@ -1720,7 +1736,6 @@ def run_manual_lead_job(job_id: str, name: str, force_type: str, user_id: int = 
         bare_name_no_de = re.sub(r"^(de|het|den|'t)\s+", "", bare_name, flags=re.IGNORECASE).strip()
         queries_to_try = [
             (name, search_city),
-            (f"tennis {bare_name}", search_city),
             (bare_name, search_city),
             (bare_name_no_de, search_city),
             (name, ""),

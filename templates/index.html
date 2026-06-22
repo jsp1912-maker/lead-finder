@@ -170,7 +170,7 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--bg); color:var
 /* ── Lead card ── */
 .card {
   background:var(--surface); border:1px solid var(--border); border-radius:10px;
-  overflow:hidden; transition:border-color .15s, box-shadow .15s;
+  overflow:hidden; transition:border-color .15s, box-shadow .15s; position:relative;
 }
 .card:hover { border-color:var(--accent); box-shadow:0 4px 16px rgba(0,88,38,.1); }
 .card-img { width:100%; height:140px; object-fit:cover; object-position:top; display:block; }
@@ -426,7 +426,10 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--bg); color:var
       </div>
       <div class="progress-wrap" id="pw-b">
         <div class="progress-track"><div class="progress-fill" id="pf-b"></div><div class="progress-beer" id="pb-b">🍺</div><div class="progress-pct" id="pp-b"></div></div>
-        <div class="progress-msg" id="pm-b"></div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="progress-msg" id="pm-b" style="flex:1"></div>
+          <button class="btn-sm danger" id="cancel-b" onclick="cancelSearch('b')" style="font-size:0.75rem;padding:3px 10px">✕ Stop</button>
+        </div>
       </div>
     </div>
 
@@ -508,7 +511,10 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--bg); color:var
       </div>
       <div class="progress-wrap" id="pw-s">
         <div class="progress-track"><div class="progress-fill" id="pf-s"></div><div class="progress-beer" id="pb-s">🍺</div><div class="progress-pct" id="pp-s"></div></div>
-        <div class="progress-msg" id="pm-s"></div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="progress-msg" id="pm-s" style="flex:1"></div>
+          <button class="btn-sm danger" id="cancel-s" onclick="cancelSearch('s')" style="font-size:0.75rem;padding:3px 10px">✕ Stop</button>
+        </div>
       </div>
     </div>
 
@@ -606,6 +612,14 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--bg); color:var
 
   <!-- Content -->
   <div class="content">
+    <div id="bulk-bar" style="display:none;background:#005826;color:#fff;padding:10px 16px;border-radius:8px;margin-bottom:12px;display:none;align-items:center;gap:10px;flex-wrap:wrap">
+      <span id="bulk-count" style="font-weight:600;font-size:0.9rem"></span>
+      <button class="btn-sm" onclick="bulkStatus('gecontacteerd')" style="background:#fff;color:#005826;font-weight:600">Gecontacteerd</button>
+      <button class="btn-sm" onclick="bulkStatus('geinteresseerd')" style="background:#fff;color:#005826;font-weight:600">Geïnteresseerd</button>
+      <button class="btn-sm" onclick="bulkStatus('afgewezen')" style="background:#fff;color:#005826;font-weight:600">Afgewezen</button>
+      <button class="btn-sm danger" onclick="bulkDelete()" style="margin-left:auto">Verwijder selectie</button>
+      <button class="btn-sm" onclick="clearSelection()" style="background:rgba(255,255,255,0.2);color:#fff">✕ Deselecteer</button>
+    </div>
     <div class="leads-grid" id="leads-grid"></div>
     <div class="events-grid" id="events-grid" style="display:none"></div>
     <div id="dashboard-view" style="display:none"></div>
@@ -1115,7 +1129,64 @@ function setBeer(prefix, pct) {
   if (pp)   pp.textContent = pct + '%';
 }
 
+let _currentJobId = {};
+
+async function cancelSearch(prefix) {
+  const job_id = _currentJobId[prefix];
+  if (!job_id) return;
+  await fetch(`/api/job/${job_id}/cancel`, { method: 'POST' });
+  document.getElementById(`pw-${prefix}`).style.display = 'none';
+  document.getElementById(`btn-${prefix}`) && (document.getElementById(`btn-${prefix}`).disabled = false);
+  toast('Zoeken gestopt', '#f59e0b');
+}
+
+let _selectedIds = new Set();
+
+function onCardSelect(cb) {
+  const id = cb.dataset.id;
+  if (cb.checked) _selectedIds.add(id);
+  else _selectedIds.delete(id);
+  updateBulkBar();
+}
+
+function updateBulkBar() {
+  const bar = document.getElementById('bulk-bar');
+  const count = _selectedIds.size;
+  if (count > 0) {
+    bar.style.display = 'flex';
+    document.getElementById('bulk-count').textContent = `${count} geselecteerd`;
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+function clearSelection() {
+  _selectedIds.clear();
+  document.querySelectorAll('.card-checkbox').forEach(cb => cb.checked = false);
+  updateBulkBar();
+}
+
+async function bulkStatus(status) {
+  const ids = [..._selectedIds];
+  await Promise.all(ids.map(id =>
+    fetch(`/api/leads/${id}/status`, { method: 'PATCH', headers: {'Content-Type':'application/json'}, body: JSON.stringify({status}) })
+  ));
+  await loadLeads();
+  clearSelection();
+  toast(`${ids.length} leads bijgewerkt naar "${status}"`, '#10b981');
+}
+
+async function bulkDelete() {
+  const ids = [..._selectedIds];
+  if (!confirm(`Weet je zeker dat je ${ids.length} leads wilt verwijderen?`)) return;
+  await Promise.all(ids.map(id => fetch(`/api/leads/${id}`, { method: 'DELETE' })));
+  await loadLeads();
+  clearSelection();
+  toast(`${ids.length} leads verwijderd`, '#ef4444');
+}
+
 function pollJob(job_id, prefix, onDone) {
+  _currentJobId[prefix] = job_id;
   let finished = false;
   let visualPct = 5;
   setBeer(prefix, visualPct);
@@ -1150,12 +1221,14 @@ function pollJob(job_id, prefix, onDone) {
       setTimeout(() => { document.getElementById(`pw-${prefix}`).style.display = 'none'; }, 2000);
       toast(`${job.count} resultaten gevonden!`);
       onDone();
-    } else if (job.status === 'error' || job.status === 'not_found') {
+    } else if (job.status === 'error' || job.status === 'not_found' || job.status === 'cancelled') {
       finished = true;
       clearInterval(t);
       document.getElementById(`pw-${prefix}`).classList.remove('busy');
       if (job.status === 'error') toast('Fout: ' + job.message, '#ef4444');
       document.getElementById(`pw-${prefix}`).style.display = 'none';
+      const btn = document.getElementById(`btn-${prefix}`);
+      if (btn) btn.disabled = false;
     }
   }, 2000);
 }
@@ -1219,8 +1292,11 @@ function leadQuality(l) {
 }
 
 function businessCardHTML(l) {
-  const img = l.screenshot
-    ? `<img class="card-img" src="/screenshots/${l.screenshot}" loading="lazy" alt="">`
+  const screenshotSrc = l.screenshot
+    ? (l.screenshot.startsWith('data:') ? l.screenshot : `/screenshots/${l.screenshot}`)
+    : null;
+  const img = screenshotSrc
+    ? `<img class="card-img" src="${screenshotSrc}" loading="lazy" alt="">`
     : `<div class="card-no-img"><div class="card-no-img-icon">🍽️</div><span>${l.website ? 'Geen screenshot' : 'Geen website'}</span></div>`;
 
   const web = l.website
@@ -1233,6 +1309,7 @@ function businessCardHTML(l) {
   const rating = l.rating ? ` ★${l.rating}` : '';
 
   return `<div class="card" id="card-${l.id}">
+    <input type="checkbox" class="card-checkbox" data-id="${l.id}" onchange="onCardSelect(this)" style="position:absolute;top:8px;left:8px;width:16px;height:16px;cursor:pointer;z-index:10;accent-color:#005826">
     ${img}
     <div class="card-body">
       <div class="card-top">
@@ -1266,8 +1343,11 @@ function businessCardHTML(l) {
 function sportCardHTML(l) {
   const rating = l.rating ? ` ★${l.rating}` : '';
 
-  const img = l.screenshot
-    ? `<img class="card-img" src="/screenshots/${l.screenshot}" loading="lazy" alt="">`
+  const screenshotSrc2 = l.screenshot
+    ? (l.screenshot.startsWith('data:') ? l.screenshot : `/screenshots/${l.screenshot}`)
+    : null;
+  const img = screenshotSrc2
+    ? `<img class="card-img" src="${screenshotSrc2}" loading="lazy" alt="">`
     : `<div class="card-no-img"><div class="card-no-img-icon">⚽</div><span>${l.website ? 'Geen screenshot' : 'Geen website'}</span></div>`;
 
   const web = l.website
@@ -1289,6 +1369,7 @@ function sportCardHTML(l) {
       : '';
 
   return `<div class="card sport-card" id="card-${l.id}">
+    <input type="checkbox" class="card-checkbox" data-id="${l.id}" onchange="onCardSelect(this)" style="position:absolute;top:8px;left:8px;width:16px;height:16px;cursor:pointer;z-index:10;accent-color:#005826">
     ${img}
     <div class="card-body">
       <div class="card-top">
