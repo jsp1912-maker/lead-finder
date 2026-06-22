@@ -1454,7 +1454,17 @@ def update_lead_status(lead_id):
 @app.route("/api/leads/<lead_id>/email")
 @login_required
 def get_lead_email(lead_id):
-    return jsonify({"html": load_email(lead_id)})
+    html = load_email(lead_id)
+    leads = load_leads(current_user.id)
+    lead = next((l for l in leads if l["id"] == lead_id), None)
+    if lead:
+        logo_url = lead.get("logo_url", "")
+        # Regenerate if email is missing, or has a logo available but email doesn't show it
+        needs_regen = not html or (logo_url and 'logo_url' not in html and logo_url not in html)
+        if needs_regen:
+            html = generate_cold_email(lead)
+            save_email(lead_id, html)
+    return jsonify({"html": html})
 
 
 @app.route("/api/leads/<lead_id>", methods=["DELETE"])
