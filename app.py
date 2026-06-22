@@ -1222,10 +1222,11 @@ def run_search_job(job_id: str, niche: str, city: str, max_results: int, force_t
             return False
 
         new_businesses = [b for b in businesses if not _is_duplicate(b)]
-        new_businesses = new_businesses[:max_results]
-        total = len(new_businesses)
+        # Haal meer op dan nodig zodat we leads zonder website kunnen overslaan
+        candidate_pool = new_businesses[:max_results * 3]
+        total_candidates = len(candidate_pool)
 
-        if total == 0:
+        if total_candidates == 0:
             jobs[job_id] = {"status": "done", "progress": 100, "message": "Geen nieuwe leads gevonden — alles al bekend. Probeer een andere zoekterm of stad.", "count": 0}
             return
 
@@ -1237,14 +1238,19 @@ def run_search_job(job_id: str, niche: str, city: str, max_results: int, force_t
             scrape_lead_details(b, is_sport=sport)
             with lock:
                 completed[0] += 1
-                if add_lead(b, user_id):
+                # Sla leads zonder website over
+                if not b.get("website"):
+                    jobs[job_id]["progress"] = 30 + int((completed[0] / max(total_candidates, 1)) * 70)
+                    jobs[job_id]["message"] = f"{completed[0]}/{total_candidates} verwerkt (geen website, overgeslagen)..."
+                    return b
+                if len(saved_leads) < max_results and add_lead(b, user_id):
                     saved_leads.append(b)
-                jobs[job_id]["progress"] = 30 + int((completed[0] / max(total, 1)) * 70)
-                jobs[job_id]["message"] = f"{completed[0]}/{total} leads verwerkt..."
+                jobs[job_id]["progress"] = 30 + int((completed[0] / max(total_candidates, 1)) * 70)
+                jobs[job_id]["message"] = f"{completed[0]}/{total_candidates} leads verwerkt..."
             return b
 
         with ThreadPoolExecutor(max_workers=4) as executor:
-            futures = {executor.submit(process_lead, b): b for b in new_businesses}
+            futures = {executor.submit(process_lead, b): b for b in candidate_pool}
             for future in as_completed(futures):
                 try:
                     future.result()
