@@ -1257,13 +1257,15 @@ def run_search_job(job_id: str, niche: str, city: str, max_results: int, force_t
                 completed[0] += 1
                 # Sla leads zonder website over
                 if not b.get("website"):
-                    jobs[job_id]["progress"] = 30 + int((completed[0] / max(total_candidates, 1)) * 70)
-                    jobs[job_id]["message"] = f"{completed[0]}/{total_candidates} verwerkt (geen website, overgeslagen)..."
+                    pct = 30 + int((len(saved_leads) / max(max_results, 1)) * 70)
+                    jobs[job_id]["progress"] = pct
+                    jobs[job_id]["message"] = f"{len(saved_leads)}/{max_results} leads gevonden..."
                     return b
                 if len(saved_leads) < max_results and add_lead(b, user_id):
                     saved_leads.append(b)
-                jobs[job_id]["progress"] = 30 + int((completed[0] / max(total_candidates, 1)) * 70)
-                jobs[job_id]["message"] = f"{completed[0]}/{total_candidates} leads verwerkt..."
+                pct = 30 + int((len(saved_leads) / max(max_results, 1)) * 70)
+                jobs[job_id]["progress"] = pct
+                jobs[job_id]["message"] = f"{len(saved_leads)}/{max_results} leads gevonden..."
             return b
 
         with ThreadPoolExecutor(max_workers=4) as executor:
