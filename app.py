@@ -102,6 +102,17 @@ jobs = {}
 _leads_lock = threading.Lock()
 _job_executor = ThreadPoolExecutor(max_workers=4)
 
+# Max 3 browsers tegelijk op de héle server: het geheugen is 1GB en elke
+# Chromium kost 150-300MB — zonder limiet loopt de server vol en bevriest alles
+_browser_slots = threading.Semaphore(3)
+
+
+def _acquire_browser_slot(what: str, timeout_s: int = 120) -> bool:
+    if _browser_slots.acquire(timeout=timeout_s):
+        return True
+    log.error("Geen browser-slot vrij na %ds voor %s — server te druk", timeout_s, what)
+    return False
+
 SPORT_KEYWORDS = ["voetbal", "hockey", "padel", "tennis", "basketbal", "volleybal",
                   "handbal", "zwemclub", "atletiek", "rugby", "cricket", "badminton"]
 
@@ -351,6 +362,15 @@ def scrape_google_maps(niche: str, city: str, max_results: int) -> list:
     deadline = time.time() + 90
     log.info("Maps-scrape start: %r (max %d)", query, max_results)
 
+    if not _acquire_browser_slot(f"maps:{query}"):
+        return results
+    try:
+        return _scrape_google_maps_inner(query, niche, city, max_results, deadline, results)
+    finally:
+        _browser_slots.release()
+
+
+def _scrape_google_maps_inner(query: str, niche: str, city: str, max_results: int, deadline: float, results: list) -> list:
     with sync_playwright() as p:
         browser = None
         try:
@@ -588,6 +608,8 @@ def take_screenshot(website: str, lead_id: str) -> str:
     if not website:
         return ""
     url = website if website.startswith("http") else f"https://{website}"
+    if not _acquire_browser_slot(f"screenshot:{url}"):
+        return ""
     try:
         with Stealth().use_sync(sync_playwright()) as p:
             browser = p.chromium.launch(headless=True, args=[
@@ -617,12 +639,16 @@ def take_screenshot(website: str, lead_id: str) -> str:
     except Exception as e:
         log.warning("Screenshot mislukt voor %s: %s", url, e)
         return ""
+    finally:
+        _browser_slots.release()
 
 
 # ── Logo finder ──────────────────────────────────────────────────────────────
 
 def _fetch_html_with_playwright(url: str) -> str:
     """Haal de HTML op via een echte browser — voor sites die requests blokkeren (403/bot-detectie)."""
+    if not _acquire_browser_slot(f"html:{url}"):
+        return ""
     try:
         with Stealth().use_sync(sync_playwright()) as p:
             browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
@@ -644,6 +670,8 @@ def _fetch_html_with_playwright(url: str) -> str:
     except Exception as e:
         log.warning("Playwright HTML-fallback mislukt voor %s: %s", url, e)
         return ""
+    finally:
+        _browser_slots.release()
 
 
 def find_logo(website: str) -> str:
@@ -896,7 +924,7 @@ def find_email_and_contact(website: str) -> tuple:
             continue
 
     # Playwright fallback — voor JS-rendered sites zoals KNLTB.Club
-    if not email:
+    if not email and _acquire_browser_slot(f"email:{url}"):
         try:
             from playwright.sync_api import sync_playwright
             playwright_pages = [url, base + "/bestuur", base + "/contact", base + "/commissies", base + "/over-ons"]
@@ -930,6 +958,8 @@ def find_email_and_contact(website: str) -> tuple:
                         pass
         except Exception as e:
             log.warning("Playwright e-mail-fallback mislukt voor %s: %s", url, e)
+        finally:
+            _browser_slots.release()
 
     return email, contact
 
@@ -1005,6 +1035,15 @@ def scrape_events(city: str, max_results: int) -> list:
         f"https://www.uitagenda.nl/agenda/{city.lower()}",
     ]
 
+    if not _acquire_browser_slot(f"events:{city}"):
+        return events
+    try:
+        return _scrape_events_inner(city, max_results, events, seen, sources)
+    finally:
+        _browser_slots.release()
+
+
+def _scrape_events_inner(city: str, max_results: int, events: list, seen: set, sources: list) -> list:
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"])
         context = browser.new_context(
@@ -1439,6 +1478,10 @@ def run_search_job(job_id: str, niche: str, city: str, max_results: int, force_t
         lock = threading.Lock()
 
         def process_lead(b):
+            # Genoeg leads binnen? Dan niets meer scrapen — scheelt browsers en geheugen
+            with lock:
+                if len(saved_leads) >= max_results:
+                    return b
             scrape_lead_details(b, is_sport=sport)
             with lock:
                 completed[0] += 1
@@ -1456,7 +1499,8 @@ def run_search_job(job_id: str, niche: str, city: str, max_results: int, force_t
             return b
 
         # Max 2 tegelijk: elke lead start meerdere Chromium-instanties en de server heeft beperkt geheugen
-        with ThreadPoolExecutor(max_workers=2) as executor:
+        executor = ThreadPoolExecutor(max_workers=2)
+        try:
             futures = {executor.submit(process_lead, b): b for b in candidate_pool}
             for future in as_completed(futures, timeout=MAX_JOB_SECONDS):
                 if len(saved_leads) >= max_results:
@@ -1468,6 +1512,10 @@ def run_search_job(job_id: str, niche: str, city: str, max_results: int, force_t
                     future.result()
                 except Exception:
                     pass
+        finally:
+            # Niet wachten op de rest: nog niet gestarte kandidaten annuleren,
+            # anders blijft de job op 100% "hangen" tot alle 30 klaar zijn
+            executor.shutdown(wait=False, cancel_futures=True)
 
         actual_saved = len(saved_leads)
         skipped = len(businesses) - actual_saved
