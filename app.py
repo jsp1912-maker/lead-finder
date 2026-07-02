@@ -1297,6 +1297,24 @@ def _scrape_events_inner(city: str, max_results: int, events: list, seen: set, s
 
 # ── Cold email generator ──────────────────────────────────────────────────────
 
+def _logo_display_size(logo_url: str) -> tuple:
+    """Bepaal de weergavemaat van het logo in de e-mail: max 70 hoog, max 160 breed,
+    met behoud van verhouding — zodat brede logo's niet in een vierkant geperst worden."""
+    try:
+        import io as _io
+
+        from PIL import Image
+
+        r = requests.get(logo_url, timeout=6, headers={"User-Agent": "Mozilla/5.0"})
+        img = Image.open(_io.BytesIO(r.content))
+        w, h = img.size
+        if w > 0 and h > 0:
+            scale = min(70 / h, 160 / w)
+            return max(int(w * scale), 1), max(int(h * scale), 1)
+    except Exception:
+        pass
+    return 70, 70
+
 SPORT_KEYWORDS_MAP = {
     "voetbal":       ["voetbal", "voetbalclub", "voetbalvereniging"],
     "hockey":        ["hockey", "hockeyclub", "hockeyvereniging"],
@@ -1372,13 +1390,14 @@ def _apply_email_template(raw_html: str, name: str, logo_url: str, is_sport: boo
             title_span["style"] = "flex:1"
             for child in list(title_p.children):
                 title_span.append(child.extract())
+            logo_w, logo_h = _logo_display_size(logo_url)
             club_logo_tag = soup.new_tag("img")
             club_logo_tag["src"] = logo_url
             club_logo_tag["alt"] = f"{escaped_name} logo"
-            club_logo_tag["width"] = "70"
-            club_logo_tag["height"] = "70"
+            club_logo_tag["width"] = str(logo_w)
+            club_logo_tag["height"] = str(logo_h)
             club_logo_tag["style"] = (
-                "width:70px;height:70px;object-fit:contain;flex-shrink:0;"
+                f"width:{logo_w}px;height:{logo_h}px;object-fit:contain;flex-shrink:0;"
                 "background:white;border-radius:6px;padding:4px;border:1px solid #ddd;margin-left:40px"
             )
             wrapper.append(title_span)
