@@ -1888,7 +1888,32 @@ def get_leads():
         leads = [l for l in leads if l.get("website_status") == status_filter]
     if type_filter:
         leads = [l for l in leads if l.get("type") == type_filter]
-    return jsonify(leads)
+    # Screenshots niet meesturen: die zijn honderden KB per lead en de lijst
+    # wordt tijdens het zoeken elke 2s opgehaald — dat vrat geheugen (OOM-crash)
+    slim = []
+    for l in leads:
+        d = {k: v for k, v in l.items() if k != "screenshot"}
+        d["has_screenshot"] = bool(l.get("screenshot"))
+        slim.append(d)
+    return jsonify(slim)
+
+
+@app.route("/api/leads/<lead_id>/screenshot")
+@login_required
+def lead_screenshot(lead_id):
+    import base64 as _b64
+    row = Lead.query.filter_by(id=lead_id, user_id=current_user.id).first()
+    shot = (row.data or {}).get("screenshot", "") if row else ""
+    if not shot:
+        return "", 404
+    if not shot.startswith("data:image"):
+        # Oude leads verwijzen nog naar een los bestand
+        return redirect(f"/screenshots/{shot}")
+    header, b64data = shot.split(",", 1)
+    mime = header.split(";")[0].replace("data:", "") or "image/png"
+    resp = app.response_class(_b64.b64decode(b64data), mimetype=mime)
+    resp.headers["Cache-Control"] = "private, max-age=3600"
+    return resp
 
 
 @app.route("/api/leads/<lead_id>", methods=["PATCH"])
@@ -2043,7 +2068,8 @@ def rescrape_lead(lead_id):
                         break
                 _save_leads_unsafe(all_leads, uid)
 
-            jobs[job_id] = {"status": "done", "progress": 100, "message": "Klaar!", "lead": lead}
+            jobs[job_id] = {"status": "done", "progress": 100, "message": "Klaar!",
+                            "lead": {k: v for k, v in lead.items() if k != "screenshot"}}
         except Exception as e:
             jobs[job_id] = {"status": "error", "message": str(e)}
 

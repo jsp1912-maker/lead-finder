@@ -1278,8 +1278,8 @@ function leadQuality(l) {
 }
 
 function businessCardHTML(l) {
-  const screenshotSrc = l.screenshot
-    ? (l.screenshot.startsWith('data:') ? l.screenshot : `/screenshots/${l.screenshot}`)
+  const screenshotSrc = l.has_screenshot
+    ? `/api/leads/${l.id}/screenshot`
     : null;
   const img = screenshotSrc
     ? `<img class="card-img" src="${screenshotSrc}" loading="lazy" alt="">`
@@ -1329,8 +1329,8 @@ function businessCardHTML(l) {
 function sportCardHTML(l) {
   const rating = l.rating ? ` ★${l.rating}` : '';
 
-  const screenshotSrc2 = l.screenshot
-    ? (l.screenshot.startsWith('data:') ? l.screenshot : `/screenshots/${l.screenshot}`)
+  const screenshotSrc2 = l.has_screenshot
+    ? `/api/leads/${l.id}/screenshot`
     : null;
   const img = screenshotSrc2
     ? `<img class="card-img" src="${screenshotSrc2}" loading="lazy" alt="">`
