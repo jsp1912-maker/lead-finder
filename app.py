@@ -102,16 +102,78 @@ jobs = {}
 _leads_lock = threading.Lock()
 _job_executor = ThreadPoolExecutor(max_workers=4)
 
-# Max 3 browsers tegelijk op de héle server: het geheugen is 1GB en elke
-# Chromium kost 150-300MB — zonder limiet loopt de server vol en bevriest alles
-_browser_slots = threading.Semaphore(3)
+# Max 2 browsers tegelijk op de héle server: het geheugen is 1GB en elke
+# Chromium kost 300-450MB — zonder limiet loopt de server vol en bevriest alles
+_BROWSER_SLOTS_TOTAL = 2
+_browser_slots = threading.Semaphore(_BROWSER_SLOTS_TOTAL)
+_slot_holders: dict = {}  # thread-id -> (omschrijving, starttijd)
+_slot_lock = threading.Lock()
+_SLOT_STUCK_SECONDS = 300
 
 
 def _acquire_browser_slot(what: str, timeout_s: int = 120) -> bool:
     if _browser_slots.acquire(timeout=timeout_s):
+        with _slot_lock:
+            _slot_holders[threading.get_ident()] = (what, time.time())
         return True
     log.error("Geen browser-slot vrij na %ds voor %s — server te druk", timeout_s, what)
     return False
+
+
+def _release_browser_slot():
+    with _slot_lock:
+        _slot_holders.pop(threading.get_ident(), None)
+    _browser_slots.release()
+
+
+def _list_chromium_pids() -> list:
+    pids = []
+    try:
+        for pid in os.listdir("/proc"):
+            if not pid.isdigit():
+                continue
+            try:
+                with open(f"/proc/{pid}/comm") as f:
+                    name = f.read().strip().lower()
+                if "chrom" in name or "headless" in name:
+                    pids.append(int(pid))
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return pids
+
+
+def _zombie_sweeper():
+    """Ruimt achtergebleven of vastgelopen chromium-processen op, zodat het geheugen nooit dichtslibt."""
+    while True:
+        time.sleep(120)
+        try:
+            now = time.time()
+            with _slot_lock:
+                holders = list(_slot_holders.values())
+            stuck = [what for what, started in holders if now - started > _SLOT_STUCK_SECONDS]
+            idle = not holders
+            if not idle and not stuck:
+                continue
+            pids = _list_chromium_pids()
+            if not pids:
+                continue
+            if stuck:
+                log.warning("Sweeper: vastgelopen browsertaken %s — %d chromium-processen hard opruimen", stuck, len(pids))
+            else:
+                log.warning("Sweeper: %d achtergebleven chromium-processen zonder actieve taak — opruimen", len(pids))
+            for pid in pids:
+                try:
+                    os.kill(pid, 9)
+                except Exception:
+                    pass
+        except Exception:
+            log.exception("Sweeper-fout")
+
+
+if os.name == "posix":
+    threading.Thread(target=_zombie_sweeper, daemon=True).start()
 
 SPORT_KEYWORDS = ["voetbal", "hockey", "padel", "tennis", "basketbal", "volleybal",
                   "handbal", "zwemclub", "atletiek", "rugby", "cricket", "badminton"]
@@ -367,7 +429,7 @@ def scrape_google_maps(niche: str, city: str, max_results: int) -> list:
     try:
         return _scrape_google_maps_inner(query, niche, city, max_results, deadline, results)
     finally:
-        _browser_slots.release()
+        _release_browser_slot()
 
 
 def _scrape_google_maps_inner(query: str, niche: str, city: str, max_results: int, deadline: float, results: list) -> list:
@@ -640,7 +702,7 @@ def take_screenshot(website: str, lead_id: str) -> str:
         log.warning("Screenshot mislukt voor %s: %s", url, e)
         return ""
     finally:
-        _browser_slots.release()
+        _release_browser_slot()
 
 
 # ── Logo finder ──────────────────────────────────────────────────────────────
@@ -671,7 +733,7 @@ def _fetch_html_with_playwright(url: str) -> str:
         log.warning("Playwright HTML-fallback mislukt voor %s: %s", url, e)
         return ""
     finally:
-        _browser_slots.release()
+        _release_browser_slot()
 
 
 def find_logo(website: str) -> str:
@@ -959,7 +1021,7 @@ def find_email_and_contact(website: str) -> tuple:
         except Exception as e:
             log.warning("Playwright e-mail-fallback mislukt voor %s: %s", url, e)
         finally:
-            _browser_slots.release()
+            _release_browser_slot()
 
     return email, contact
 
@@ -1040,7 +1102,7 @@ def scrape_events(city: str, max_results: int) -> list:
     try:
         return _scrape_events_inner(city, max_results, events, seen, sources)
     finally:
-        _browser_slots.release()
+        _release_browser_slot()
 
 
 def _scrape_events_inner(city: str, max_results: int, events: list, seen: set, sources: list) -> list:
@@ -1630,8 +1692,12 @@ def job_status(job_id):
 @login_required
 def debug_info():
     """Serverstatus: geheugen, browserprocessen en recente logs — voor probleemdiagnose."""
+    now = time.time()
+    with _slot_lock:
+        slot_info = [{"taak": what, "bezig_sinds_s": int(now - started)} for what, started in _slot_holders.values()]
     info = {
         "threads": len(threading.enumerate()),
+        "browser_slots": {"totaal": _BROWSER_SLOTS_TOTAL, "bezet": slot_info},
         "jobs_recent": {k: {"status": v.get("status"), "progress": v.get("progress"), "message": v.get("message")}
                         for k, v in list(jobs.items())[-10:]},
     }
