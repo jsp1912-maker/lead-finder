@@ -398,7 +398,6 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--bg); color:var
             <option value="5">5 leads</option>
             <option value="10" selected>10 leads</option>
             <option value="20">20 leads</option>
-            <option value="50">50 leads</option>
           </select>
         </div>
         <div class="field">
@@ -963,7 +962,16 @@ async function startExcelSearch(type, input) {
     return;
   }
 
-  toast(`${names.length} namen gevonden, zoeken gestart...`, '#10b981');
+  // Max 20 namen per import — elke naam kost ±1 minuut en het tabblad moet
+  // open blijven, dus grotere runs stranden in de praktijk halverwege
+  const EXCEL_MAX = 20;
+  const namesToProcess = names.slice(0, EXCEL_MAX);
+  const nietVerwerkt = names.length - namesToProcess.length;
+  if (nietVerwerkt > 0) {
+    toast(`${names.length} namen gevonden — de eerste ${EXCEL_MAX} worden verwerkt. Zet de overige ${nietVerwerkt} in een nieuw bestand.`, '#f59e0b');
+  } else {
+    toast(`${names.length} namen gevonden, zoeken gestart...`, '#10b981');
+  }
 
   // Bepaal sport type label voor tweede zoekpoging
   const sportLabel = isSport ? (document.getElementById('s-type-select')?.value || 'tennisvereniging') : '';
@@ -988,9 +996,9 @@ async function startExcelSearch(type, input) {
   }
 
   let done = 0, gevonden = 0, nietGevonden = [], log = [];
-  for (const name of names) {
-    setBeer(isSport ? 's' : 'b', Math.round((done / names.length) * 100));
-    document.getElementById(pmId).textContent = `Zoeken (${done + 1}/${names.length}): ${name}`;
+  for (const name of namesToProcess) {
+    setBeer(isSport ? 's' : 'b', Math.round((done / namesToProcess.length) * 100));
+    document.getElementById(pmId).textContent = `Zoeken (${done + 1}/${namesToProcess.length}): ${name}`;
 
     // Stap 1: Google Maps
     const res = await fetch('/api/search', {
@@ -1031,9 +1039,9 @@ async function startExcelSearch(type, input) {
   await loadLeads();
 
   // Toon resultaten-popup
-  const dupCount = names.length - gevonden - nietGevonden.length;
+  const dupCount = namesToProcess.length - gevonden - nietGevonden.length;
   document.getElementById(pmId).innerHTML =
-    `<b>${gevonden} nieuw toegevoegd</b>${dupCount > 0 ? ` · ${dupCount} al in database` : ''}${nietGevonden.length > 0 ? ` · ${nietGevonden.length} overgeslagen` : ''}<br><br>` +
+    `<b>${gevonden} nieuw toegevoegd</b>${dupCount > 0 ? ` · ${dupCount} al in database` : ''}${nietGevonden.length > 0 ? ` · ${nietGevonden.length} overgeslagen` : ''}${nietVerwerkt > 0 ? ` · ${nietVerwerkt} niet verwerkt (max ${EXCEL_MAX} per import)` : ''}<br><br>` +
     `<div style="text-align:left;font-size:0.8rem;max-height:200px;overflow-y:auto;line-height:1.6">${log.map(l => `<div>${l}</div>`).join('')}</div>`;
   document.getElementById(pfId).style.display = 'none';
   // Verberg pas na 10 seconden zodat gebruiker het kan lezen

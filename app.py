@@ -1518,7 +1518,8 @@ def search():
     data = request.json
     niche = data.get("niche", "").strip()
     city = data.get("city", "").strip()
-    max_results = min(int(data.get("max_results", data.get("max", 10))), 50)
+    # Max 20: de job wordt na 180s afgekapt, meer dan ~20 leads passen daar toch niet in
+    max_results = min(int(data.get("max_results", data.get("max", 10))), 20)
     force_type = data.get("force_type")
     radius = int(data.get("radius", 0))
     if not niche:
