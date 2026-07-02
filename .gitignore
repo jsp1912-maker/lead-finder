@@ -7,3 +7,6 @@ events_db.json
 screenshots/
 emails/
 *.csv
+node_modules/
+instance/
+*.db
