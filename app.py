@@ -836,11 +836,23 @@ def find_logo(website: str) -> str:
                 return "https:" + src
             return base + "/" + src.lstrip("/")
 
-        # 1. Apple touch icon or high-res favicon (always a logo)
+        def _icon_size(tag) -> int:
+            """Pixelmaat van een icoon-link; onbekend = 180 (Apple-standaard)."""
+            sizes = tag.get("sizes", "")
+            if isinstance(sizes, (list, tuple)):
+                sizes = " ".join(sizes)
+            m = re.search(r"(\d+)x\d+", sizes) or re.search(r"(\d+)x\d+", tag.get("href", ""))
+            return int(m.group(1)) if m else 180
+
+        # 1. Grootste apple touch icon (kleine 57x57-varianten worden wazig in de e-mail)
+        touch_icons = []
         for rel in ["apple-touch-icon", "apple-touch-icon-precomposed"]:
-            tag = soup.find("link", rel=rel)
-            if tag and tag.get("href"):
-                return abs_url(tag["href"])
+            for tag in soup.find_all("link", rel=rel):
+                if tag.get("href"):
+                    touch_icons.append((_icon_size(tag), abs_url(tag["href"])))
+        touch_icons.sort(key=lambda t: t[0], reverse=True)
+        if touch_icons and touch_icons[0][0] >= 120:
+            return touch_icons[0][1]
 
         # 2. <img> with "logo" clearly in src, class or alt — skip large/wide images
         for img in soup.find_all("img"):
@@ -858,7 +870,12 @@ def find_logo(website: str) -> str:
             if src:
                 return abs_url(src)
 
-        # 3. Favicon (png/svg/ico via <link> tags)
+        # 2b. Geen echt logo gevonden — dan toch de (kleinere) touch icon
+        if touch_icons:
+            return touch_icons[0][1]
+
+        # 3. Favicon (png/svg/ico via <link> tags) — grootste eerst
+        favicons = []
         for tag in soup.find_all("link"):
             rel = " ".join(tag.get("rel", [])).lower()
             if "icon" not in rel:
@@ -866,8 +883,11 @@ def find_logo(website: str) -> str:
             href = tag.get("href", "")
             if not href:
                 continue
-            if any(href.endswith(ext) for ext in (".png", ".svg", ".ico")):
-                return abs_url(href)
+            if any(href.split("?")[0].endswith(ext) for ext in (".png", ".svg", ".ico")):
+                favicons.append((_icon_size(tag), abs_url(href)))
+        if favicons:
+            favicons.sort(key=lambda t: t[0], reverse=True)
+            return favicons[0][1]
 
         # 4. Common logo paths
         for path in ["/logo.png", "/logo.svg", "/images/logo.png", "/img/logo.png",
@@ -1989,7 +2009,8 @@ def rescrape_lead(lead_id):
                 except Exception:
                     pass
             if website:
-                lead["logo_url"] = lead.get("logo_url") or find_logo(website)
+                # Altijd opnieuw zoeken: een eerder gekozen logo kan een wazig mini-icoontje zijn
+                lead["logo_url"] = find_logo(website) or lead.get("logo_url", "")
             try:
                 save_email(lead_id, generate_cold_email(lead))
             except Exception:
