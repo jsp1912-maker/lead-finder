@@ -71,8 +71,39 @@ login_manager.login_view = 'login_page'
 def load_user(user_id):
     return User.query.get(int(user_id))
 
+def _migrate_screenshots_to_column():
+    """Eenmalig: verplaats screenshots uit de data-JSON naar de aparte kolom.
+    Rij voor rij, zodat het geheugen laag blijft."""
+    lead_ids = [r[0] for r in db.session.query(Lead.id).all()]
+    migrated = 0
+    for lead_id in lead_ids:
+        row = db.session.get(Lead, lead_id)
+        if row is None:
+            continue
+        data = row.data or {}
+        shot = data.get("screenshot", "")
+        if shot:
+            row.screenshot = shot
+            row.data = {k: v for k, v in data.items() if k != "screenshot"}
+            migrated += 1
+            db.session.commit()
+        db.session.expunge_all()
+    if migrated:
+        log.info("Migratie: %d screenshots verplaatst naar aparte kolom", migrated)
+
+
 with app.app_context():
     db.create_all()
+    try:
+        from sqlalchemy import inspect as _sa_inspect
+        from sqlalchemy import text as _sa_text
+        _cols = [c["name"] for c in _sa_inspect(db.engine).get_columns("leads")]
+        if "screenshot" not in _cols:
+            db.session.execute(_sa_text("ALTER TABLE leads ADD COLUMN screenshot TEXT"))
+            db.session.commit()
+        _migrate_screenshots_to_column()
+    except Exception:
+        log.exception("Screenshot-migratie mislukt")
 
 SCREENSHOTS_DIR = os.path.join(os.path.dirname(__file__), "screenshots")
 DATA_FILE = os.path.join(os.path.dirname(__file__), "leads_db.json")
@@ -248,7 +279,12 @@ def _load_leads_unsafe(user_id=None):
         return []
     with app.app_context():
         rows = Lead.query.filter_by(user_id=user_id).order_by(Lead.created_at.desc()).all()
-        return [row.data for row in rows]
+        result = []
+        for row in rows:
+            d = dict(row.data)
+            d["has_screenshot"] = bool(row.screenshot)
+            result.append(d)
+        return result
 
 
 def _save_leads_unsafe(leads, user_id=None):
@@ -264,11 +300,16 @@ def _save_leads_unsafe(leads, user_id=None):
             if lead_id not in new_ids:
                 db.session.delete(existing_ids[lead_id])
         for lead in leads:
-            slim = {k: v for k, v in lead.items() if k != "cold_email"}
+            # Screenshot gaat naar de aparte kolom, nooit in de data-JSON
+            slim = {k: v for k, v in lead.items() if k not in ("cold_email", "screenshot", "has_screenshot")}
+            shot = lead.get("screenshot", "")
             if lead["id"] in existing_ids:
-                existing_ids[lead["id"]].data = slim
+                row = existing_ids[lead["id"]]
+                row.data = slim
+                if shot:
+                    row.screenshot = shot
             else:
-                db.session.add(Lead(id=lead["id"], user_id=user_id, data=slim))
+                db.session.add(Lead(id=lead["id"], user_id=user_id, data=slim, screenshot=shot or None))
         db.session.commit()
 
 
@@ -1888,14 +1929,9 @@ def get_leads():
         leads = [l for l in leads if l.get("website_status") == status_filter]
     if type_filter:
         leads = [l for l in leads if l.get("type") == type_filter]
-    # Screenshots niet meesturen: die zijn honderden KB per lead en de lijst
-    # wordt tijdens het zoeken elke 2s opgehaald — dat vrat geheugen (OOM-crash)
-    slim = []
-    for l in leads:
-        d = {k: v for k, v in l.items() if k != "screenshot"}
-        d["has_screenshot"] = bool(l.get("screenshot"))
-        slim.append(d)
-    return jsonify(slim)
+    # Screenshots zitten in een aparte kolom en komen hier dus nooit mee —
+    # de lijst blijft licht, ook op de server (dit veroorzaakte OOM-crashes)
+    return jsonify(leads)
 
 
 @app.route("/api/leads/<lead_id>/screenshot")
@@ -1903,7 +1939,7 @@ def get_leads():
 def lead_screenshot(lead_id):
     import base64 as _b64
     row = Lead.query.filter_by(id=lead_id, user_id=current_user.id).first()
-    shot = (row.data or {}).get("screenshot", "") if row else ""
+    shot = (row.screenshot or (row.data or {}).get("screenshot", "")) if row else ""
     if not shot:
         return "", 404
     if not shot.startswith("data:image"):

@@ -1174,6 +1174,7 @@ function pollJob(job_id, prefix, onDone) {
   let finished = false;
   let visualPct = 5;
   let realPct = 5;
+  let tick = 0;
   setBeer(prefix, visualPct);
 
   const t = setInterval(async () => {
@@ -1197,7 +1198,10 @@ function pollJob(job_id, prefix, onDone) {
     const msg = document.getElementById(`pm-${prefix}`);
     if (msg) msg.textContent = job.message || '';
 
-    try { await loadLeads(); } catch(e) {}
+    // Lijst elke 3e poll verversen (6s) — vaak genoeg om mee te kijken,
+    // zonder de server elke 2s de hele lijst te laten opbouwen
+    tick++;
+    if (tick % 3 === 0) { try { await loadLeads(); } catch(e) {} }
 
     if (job.status === 'done') {
       finished = true;

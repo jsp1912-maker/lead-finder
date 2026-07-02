@@ -31,4 +31,7 @@ class Lead(db.Model):
     id = db.Column(db.String(36), primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     data = db.Column(db.JSON, nullable=False)
+    # Apart van `data`: screenshots zijn honderden KB en mogen nooit
+    # meegeladen worden bij het ophalen van de leadslijst
+    screenshot = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
