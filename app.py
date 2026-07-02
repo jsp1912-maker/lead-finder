@@ -1,9 +1,11 @@
 """Lead Finder App — Flask backend"""
 
 import json
+import logging
 import os
 import re
 import threading
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -17,6 +19,9 @@ from playwright.sync_api import sync_playwright
 from playwright_stealth import Stealth
 
 from models import Lead, User, db
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+log = logging.getLogger("leadfinder")
 
 app = Flask(__name__)
 app.config['TEMPLATES_AUTO_RELOAD'] = True
@@ -324,128 +329,153 @@ def get_gemeente(city: str) -> str:
 def scrape_google_maps(niche: str, city: str, max_results: int) -> list:
     query = f"{niche} {city}".strip() if city and city.lower() not in ("", "nederland") else niche
     results = []
+    # Harde limiet zodat één vastgelopen scrape nooit de hele job blokkeert
+    deadline = time.time() + 90
+    log.info("Maps-scrape start: %r (max %d)", query, max_results)
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"])
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            viewport={"width": 1280, "height": 800},
-        )
-        page = context.new_page()
+        browser = None
         try:
-            page.goto(
-                f"https://www.google.com/maps/search/{query.replace(' ', '+')}",
-                wait_until="domcontentloaded", timeout=30000
+            browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"])
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                viewport={"width": 1280, "height": 800},
             )
-        except Exception:
-            browser.close()
-            return results
-        page.wait_for_timeout(1200)
-
-        for text in ["Alles accepteren", "Accept all", "Akkoord"]:
+            # Geen enkele browseractie mag oneindig wachten
+            context.set_default_timeout(10000)
+            page = context.new_page()
             try:
-                page.click(f'button:has-text("{text}")', timeout=1500)
-                page.wait_for_timeout(300)
-                break
-            except Exception:
-                pass
+                page.goto(
+                    f"https://www.google.com/maps/search/{query.replace(' ', '+')}",
+                    wait_until="domcontentloaded", timeout=30000
+                )
+            except Exception as e:
+                log.warning("Maps-scrape: pagina laden mislukt voor %r: %s", query, e)
+                return results
+            page.wait_for_timeout(1200)
 
-        page.wait_for_timeout(600)
-
-        place_urls = []
-        seen_names = set()
-        no_new_count = 0
-
-        while len(place_urls) < max_results:
-            cards = page.query_selector_all('a[href*="/maps/place/"]')
-            before = len(place_urls)
-            for card in cards:
-                if len(place_urls) >= max_results:
-                    break
-                name = (card.get_attribute("aria-label") or "").strip()
-                href = (card.get_attribute("href") or "").strip()
-                if name and href and name not in seen_names:
-                    seen_names.add(name)
-                    place_urls.append((name, href))
-            if len(place_urls) == before:
-                no_new_count += 1
-                if no_new_count >= 3:
-                    break
-            else:
-                no_new_count = 0
-            feed = page.query_selector('div[role="feed"]')
-            if feed:
-                feed.evaluate("el => el.scrollBy(0, 800)")
-                page.wait_for_timeout(600)
-            else:
-                break
-
-        for name, href in place_urls:
-            try:
-                page.goto(href, wait_until="domcontentloaded", timeout=60000)
-                page.wait_for_timeout(800)
-
-                address, phone, website, rating = "", "", "", ""
-
+            for text in ["Alles accepteren", "Accept all", "Akkoord"]:
                 try:
-                    el = page.query_selector('[data-item-id="address"] .fontBodyMedium')
-                    if el:
-                        address = el.inner_text().strip()
+                    page.click(f'button:has-text("{text}")', timeout=1500)
+                    page.wait_for_timeout(300)
+                    break
                 except Exception:
                     pass
 
-                try:
-                    els = page.query_selector_all('[data-item-id^="phone"]')
-                    for el in els:
-                        t = el.inner_text().strip()
-                        if t:
-                            phone = t
-                            break
-                except Exception:
-                    pass
+            page.wait_for_timeout(600)
 
+            if "consent.google.com" in page.url or "sorry" in page.url:
+                log.warning("Maps-scrape: geblokkeerd door Google (url=%s, titel=%r)", page.url, page.title())
+                return results
+
+            place_urls = []
+            seen_names = set()
+            no_new_count = 0
+
+            while len(place_urls) < max_results and time.time() < deadline:
+                cards = page.query_selector_all('a[href*="/maps/place/"]')
+                before = len(place_urls)
+                for card in cards:
+                    if len(place_urls) >= max_results:
+                        break
+                    name = (card.get_attribute("aria-label") or "").strip()
+                    href = (card.get_attribute("href") or "").strip()
+                    if name and href and name not in seen_names:
+                        seen_names.add(name)
+                        place_urls.append((name, href))
+                if len(place_urls) == before:
+                    no_new_count += 1
+                    if no_new_count >= 3:
+                        break
+                else:
+                    no_new_count = 0
+                feed = page.query_selector('div[role="feed"]')
+                if feed:
+                    feed.evaluate("el => el.scrollBy(0, 800)")
+                    page.wait_for_timeout(600)
+                else:
+                    break
+
+            if not place_urls:
+                log.warning("Maps-scrape: 0 resultaatkaarten voor %r (url=%s, titel=%r)", query, page.url, page.title())
+
+            for name, href in place_urls:
+                if time.time() > deadline:
+                    log.warning("Maps-scrape: deadline bereikt na %d/%d plaatsen voor %r", len(results), len(place_urls), query)
+                    break
                 try:
-                    el = page.query_selector('a[data-item-id="authority"]')
-                    if el:
-                        website = el.get_attribute("href") or el.inner_text().strip()
-                    else:
-                        el = page.query_selector('[data-item-id="authority"]')
+                    page.goto(href, wait_until="domcontentloaded", timeout=30000)
+                    page.wait_for_timeout(800)
+
+                    address, phone, website, rating = "", "", "", ""
+
+                    try:
+                        el = page.query_selector('[data-item-id="address"] .fontBodyMedium')
                         if el:
-                            website = el.inner_text().strip()
-                except Exception:
-                    pass
+                            address = el.inner_text().strip()
+                    except Exception:
+                        pass
 
+                    try:
+                        els = page.query_selector_all('[data-item-id^="phone"]')
+                        for el in els:
+                            t = el.inner_text().strip()
+                            if t:
+                                phone = t
+                                break
+                    except Exception:
+                        pass
+
+                    try:
+                        el = page.query_selector('a[data-item-id="authority"]')
+                        if el:
+                            website = el.get_attribute("href") or el.inner_text().strip()
+                        else:
+                            el = page.query_selector('[data-item-id="authority"]')
+                            if el:
+                                website = el.inner_text().strip()
+                    except Exception:
+                        pass
+
+                    try:
+                        el = page.query_selector('span[aria-hidden="true"].fontDisplayLarge')
+                        if el:
+                            rating = el.inner_text().strip()
+                    except Exception:
+                        pass
+
+                    results.append({
+                        "id": str(uuid.uuid4()),
+                        "type": "sport" if is_sport(niche) else "business",
+                        "name": name,
+                        "niche": niche,
+                        "city": city,
+                        "address": address,
+                        "phone": phone,
+                        "website": website,
+                        "rating": rating,
+                        "website_status": "",
+                        "screenshot": "",
+                        "email": "",
+                        "contact_person": "",
+                        "board": {},
+                        "cold_email": "",
+                        "found_at": datetime.now().isoformat(),
+                        "status": "nieuw",
+                    })
+                except Exception as e:
+                    log.warning("Maps-scrape: detailpagina mislukt voor %r: %s", name, e)
+                    continue
+        except Exception:
+            log.exception("Maps-scrape: onverwachte fout voor %r", query)
+        finally:
+            if browser:
                 try:
-                    el = page.query_selector('span[aria-hidden="true"].fontDisplayLarge')
-                    if el:
-                        rating = el.inner_text().strip()
+                    browser.close()
                 except Exception:
                     pass
 
-                results.append({
-                    "id": str(uuid.uuid4()),
-                    "type": "sport" if is_sport(niche) else "business",
-                    "name": name,
-                    "niche": niche,
-                    "city": city,
-                    "address": address,
-                    "phone": phone,
-                    "website": website,
-                    "rating": rating,
-                    "website_status": "",
-                    "screenshot": "",
-                    "email": "",
-                    "contact_person": "",
-                    "board": {},
-                    "cold_email": "",
-                    "found_at": datetime.now().isoformat(),
-                    "status": "nieuw",
-                })
-            except Exception:
-                continue
-
-        browser.close()
-
+    log.info("Maps-scrape klaar: %r -> %d resultaten", query, len(results))
     return results
 
 
@@ -508,21 +538,28 @@ def take_screenshot(website: str, lead_id: str) -> str:
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
             ])
-            context = browser.new_context(
-                viewport={"width": 1280, "height": 800},
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-                locale="nl-NL",
-            )
-            page = context.new_page()
-            page.goto(url, wait_until="domcontentloaded", timeout=15000)
-            page.wait_for_timeout(1000)
-            _dismiss_cookie_banner(page)
-            page.wait_for_timeout(500)
-            img_bytes = page.screenshot(full_page=False)
-            browser.close()
+            try:
+                context = browser.new_context(
+                    viewport={"width": 1280, "height": 800},
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+                    locale="nl-NL",
+                )
+                context.set_default_timeout(10000)
+                page = context.new_page()
+                page.goto(url, wait_until="domcontentloaded", timeout=15000)
+                page.wait_for_timeout(1000)
+                _dismiss_cookie_banner(page)
+                page.wait_for_timeout(500)
+                img_bytes = page.screenshot(full_page=False)
+            finally:
+                try:
+                    browser.close()
+                except Exception:
+                    pass
         b64 = base64.b64encode(img_bytes).decode("utf-8")
         return f"data:image/png;base64,{b64}"
-    except Exception:
+    except Exception as e:
+        log.warning("Screenshot mislukt voor %s: %s", url, e)
         return ""
 
 
@@ -772,28 +809,34 @@ def find_email_and_contact(website: str) -> tuple:
             playwright_pages = [url, base + "/bestuur", base + "/contact", base + "/commissies", base + "/over-ons"]
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"])
-                context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-                pw_page = context.new_page()
-                for page_url in playwright_pages:
-                    if email:
-                        break
+                try:
+                    context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                    context.set_default_timeout(10000)
+                    pw_page = context.new_page()
+                    for page_url in playwright_pages:
+                        if email:
+                            break
+                        try:
+                            pw_page.goto(page_url, wait_until="domcontentloaded", timeout=15000)
+                            pw_page.wait_for_timeout(1000)
+                            html = pw_page.content()
+                            found_emails = set(e for e in email_pattern.findall(html) if not any(j in e.lower() for j in junk))
+                            # Ook mailto links ophalen via Playwright
+                            for href in pw_page.eval_on_selector_all("a[href^='mailto:']", "els => els.map(e => e.href)"):
+                                candidate = href.replace("mailto:", "").split("?")[0].strip()
+                                if candidate and "@" in candidate and not any(j in candidate.lower() for j in junk):
+                                    found_emails.add(candidate)
+                            if found_emails:
+                                email = next(iter(found_emails))
+                        except Exception:
+                            continue
+                finally:
                     try:
-                        pw_page.goto(page_url, wait_until="domcontentloaded", timeout=15000)
-                        pw_page.wait_for_timeout(1000)
-                        html = pw_page.content()
-                        found_emails = set(e for e in email_pattern.findall(html) if not any(j in e.lower() for j in junk))
-                        # Ook mailto links ophalen via Playwright
-                        for href in pw_page.eval_on_selector_all("a[href^='mailto:']", "els => els.map(e => e.href)"):
-                            candidate = href.replace("mailto:", "").split("?")[0].strip()
-                            if candidate and "@" in candidate and not any(j in candidate.lower() for j in junk):
-                                found_emails.add(candidate)
-                        if found_emails:
-                            email = next(iter(found_emails))
+                        browser.close()
                     except Exception:
-                        continue
-                browser.close()
-        except Exception:
-            pass
+                        pass
+        except Exception as e:
+            log.warning("Playwright e-mail-fallback mislukt voor %s: %s", url, e)
 
     return email, contact
 
@@ -875,6 +918,7 @@ def scrape_events(city: str, max_results: int) -> list:
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             viewport={"width": 1280, "height": 800},
         )
+        context.set_default_timeout(10000)
         page = context.new_page()
 
         # Try Eventbrite
@@ -960,7 +1004,10 @@ def scrape_events(city: str, max_results: int) -> list:
             except Exception:
                 pass
 
-        browser.close()
+        try:
+            browser.close()
+        except Exception:
+            pass
 
     return events
 
@@ -1212,7 +1259,7 @@ def scrape_lead_details(b: dict, is_sport: bool = False):
 
 def run_search_job(job_id: str, niche: str, city: str, max_results: int, force_type: str = None, radius: int = 0, user_id: int = None):
     jobs[job_id] = {"status": "running", "progress": 0, "message": "Google Maps doorzoeken..."}
-    import time
+    log.info("Zoekjob %s gestart: niche=%r stad=%r max=%d", job_id, niche, city, max_results)
     start_time = time.time()
     MAX_JOB_SECONDS = 180
     try:
@@ -1302,7 +1349,8 @@ def run_search_job(job_id: str, niche: str, city: str, max_results: int, force_t
                 jobs[job_id]["message"] = f"{len(saved_leads)}/{max_results} leads gevonden..."
             return b
 
-        with ThreadPoolExecutor(max_workers=4) as executor:
+        # Max 2 tegelijk: elke lead start meerdere Chromium-instanties en de server heeft beperkt geheugen
+        with ThreadPoolExecutor(max_workers=2) as executor:
             futures = {executor.submit(process_lead, b): b for b in candidate_pool}
             for future in as_completed(futures, timeout=MAX_JOB_SECONDS):
                 if len(saved_leads) >= max_results:
@@ -1319,7 +1367,9 @@ def run_search_job(job_id: str, niche: str, city: str, max_results: int, force_t
         skipped = len(businesses) - actual_saved
         skip_msg = f" ({skipped} al bekend overgeslagen)" if skipped > 0 else ""
         jobs[job_id] = {"status": "done", "progress": 100, "message": f"{actual_saved} nieuwe leads opgeslagen!{skip_msg}", "count": actual_saved}
+        log.info("Zoekjob %s klaar: %d leads opgeslagen", job_id, actual_saved)
     except Exception as e:
+        log.exception("Zoekjob %s mislukt", job_id)
         jobs[job_id] = {"status": "error", "progress": 0, "message": str(e)}
 
 
@@ -1328,12 +1378,13 @@ def run_events_job(job_id: str, city: str, max_results: int):
     try:
         events = scrape_events(city, max_results)
         all_events = load_events()
-        existing_event_keys = {e["name"].lower().strip() for e in all_events}
-        new_events = [e for e in events if e["name"].lower().strip() not in existing_event_keys]
+        existing_event_keys = {e.get("title", e.get("name", "")).lower().strip() for e in all_events}
+        new_events = [e for e in events if e["title"].lower().strip() not in existing_event_keys]
         all_events = new_events + all_events
         save_events(all_events)
         jobs[job_id] = {"status": "done", "progress": 100, "message": f"{len(new_events)} evenementen gevonden!", "count": len(new_events)}
     except Exception as e:
+        log.exception("Events-job mislukt voor %s", city)
         jobs[job_id] = {"status": "error", "progress": 0, "message": str(e)}
 
 
@@ -1841,6 +1892,7 @@ def run_manual_lead_job(job_id: str, name: str, force_type: str, user_id: int = 
             "count": 1,
         }
     except Exception as e:
+        log.exception("Handmatige lead-job mislukt voor %r", name)
         # Zet job altijd op done zodat de frontend niet blijft hangen
         jobs[job_id] = {"status": "done", "progress": 100, "message": f"{name} — fout: {e}", "count": 0}
 
