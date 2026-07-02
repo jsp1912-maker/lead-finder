@@ -127,7 +127,16 @@ def _release_browser_slot():
     _browser_slots.release()
 
 
-def _list_chromium_pids() -> list:
+def _is_zombie(pid: str) -> bool:
+    try:
+        with open(f"/proc/{pid}/stat") as f:
+            # Formaat: "pid (comm) state ..." — comm kan spaties bevatten
+            return f.read().rsplit(")", 1)[1].split()[0] == "Z"
+    except Exception:
+        return False
+
+
+def _list_chromium_pids(include_zombies: bool = False) -> list:
     pids = []
     try:
         for pid in os.listdir("/proc"):
@@ -136,13 +145,27 @@ def _list_chromium_pids() -> list:
             try:
                 with open(f"/proc/{pid}/comm") as f:
                     name = f.read().strip().lower()
-                if "chrom" in name or "headless" in name:
+                if ("chrom" in name or "headless" in name) and (include_zombies or not _is_zombie(pid)):
                     pids.append(int(pid))
             except Exception:
                 continue
     except Exception:
         pass
     return pids
+
+
+def _reap_zombies() -> int:
+    """Ruim zombie-kindprocessen op (python is PID 1 in de container en erft alle wezen)."""
+    reaped = 0
+    while True:
+        try:
+            pid, _ = os.waitpid(-1, os.WNOHANG)
+        except (ChildProcessError, OSError):
+            break
+        if pid == 0:
+            break
+        reaped += 1
+    return reaped
 
 
 def _zombie_sweeper():
@@ -158,17 +181,20 @@ def _zombie_sweeper():
             if not idle and not stuck:
                 continue
             pids = _list_chromium_pids()
-            if not pids:
-                continue
-            if stuck:
-                log.warning("Sweeper: vastgelopen browsertaken %s — %d chromium-processen hard opruimen", stuck, len(pids))
-            else:
-                log.warning("Sweeper: %d achtergebleven chromium-processen zonder actieve taak — opruimen", len(pids))
-            for pid in pids:
-                try:
-                    os.kill(pid, 9)
-                except Exception:
-                    pass
+            if pids:
+                if stuck:
+                    log.warning("Sweeper: vastgelopen browsertaken %s — %d chromium-processen hard opruimen", stuck, len(pids))
+                else:
+                    log.warning("Sweeper: %d achtergebleven chromium-processen zonder actieve taak — opruimen", len(pids))
+                for pid in pids:
+                    try:
+                        os.kill(pid, 9)
+                    except Exception:
+                        pass
+            if idle:
+                reaped = _reap_zombies()
+                if reaped:
+                    log.info("Sweeper: %d zombie-processen definitief opgeruimd", reaped)
         except Exception:
             log.exception("Sweeper-fout")
 
@@ -480,7 +506,37 @@ def _scrape_google_maps_inner(query: str, niche: str, city: str, max_results: in
             seen_names = set()
             no_new_count = 0
 
-            while len(place_urls) < max_results and time.time() < deadline:
+            # Wacht tot óf de resultatenlijst óf het detailpaneel geladen is
+            try:
+                page.wait_for_selector(
+                    'a[href*="/maps/place/"], [data-item-id="address"], a[data-item-id="authority"]',
+                    timeout=8000,
+                )
+            except Exception:
+                pass
+
+            # Bij een exacte match toont Google direct de detailpagina (soms via
+            # redirect naar /maps/place/, soms op de zoek-URL zelf) zonder
+            # resultatenlijst — behandel die pagina dan als het enige resultaat
+            direct_match = "/maps/place/" in page.url
+            if not direct_match:
+                try:
+                    if page.query_selector('[data-item-id="address"]') or page.query_selector('a[data-item-id="authority"]'):
+                        direct_match = True
+                except Exception:
+                    pass
+            if direct_match:
+                place_name = ""
+                try:
+                    el = page.query_selector("h1")
+                    if el:
+                        place_name = (el.inner_text() or "").strip()
+                except Exception:
+                    pass
+                place_urls.append((place_name or niche, page.url))
+                log.info("Maps-scrape: directe match op plaats-pagina: %r", place_name or niche)
+
+            while not direct_match and len(place_urls) < max_results and time.time() < deadline:
                 cards = page.query_selector_all('a[href*="/maps/place/"]')
                 before = len(place_urls)
                 for card in cards:
@@ -1764,7 +1820,10 @@ def debug_info():
                 except Exception:
                     pass
         info["totaal_processen"] = len(proc_names)
-        info["chromium_processen"] = sum(1 for n in proc_names if "chrom" in n.lower() or "headless" in n.lower())
+        levend = len(_list_chromium_pids())
+        totaal_chromium = len(_list_chromium_pids(include_zombies=True))
+        info["chromium_processen"] = levend
+        info["chromium_zombies"] = totaal_chromium - levend
         info["node_processen"] = sum(1 for n in proc_names if n.lower().startswith("node"))
     except Exception:
         pass
