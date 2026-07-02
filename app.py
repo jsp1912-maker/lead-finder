@@ -109,7 +109,7 @@ _BROWSER_SLOTS_TOTAL = 1
 _browser_slots = threading.Semaphore(_BROWSER_SLOTS_TOTAL)
 _slot_holders: dict = {}  # thread-id -> (omschrijving, starttijd)
 _slot_lock = threading.Lock()
-_SLOT_STUCK_SECONDS = 300
+_SLOT_STUCK_SECONDS = 240
 
 
 def _acquire_browser_slot(what: str, timeout_s: int = 120) -> bool:
@@ -473,7 +473,7 @@ def _scrape_google_maps_inner(query: str, niche: str, city: str, max_results: in
             page.wait_for_timeout(600)
 
             if "consent.google.com" in page.url or "sorry" in page.url:
-                log.warning("Maps-scrape: geblokkeerd door Google (url=%s, titel=%r)", page.url, page.title())
+                log.warning("Maps-scrape: geblokkeerd door Google (url=%s)", page.url)
                 return results
 
             place_urls = []
@@ -499,13 +499,19 @@ def _scrape_google_maps_inner(query: str, niche: str, city: str, max_results: in
                     no_new_count = 0
                 feed = page.query_selector('div[role="feed"]')
                 if feed:
-                    feed.evaluate("el => el.scrollBy(0, 800)")
+                    # Geen evaluate() gebruiken: die heeft géén timeout en kan
+                    # eeuwig hangen als de pagina crasht — muiswiel is wel begrensd
+                    try:
+                        feed.hover(timeout=3000)
+                        page.mouse.wheel(0, 800)
+                    except Exception:
+                        break
                     page.wait_for_timeout(600)
                 else:
                     break
 
             if not place_urls:
-                log.warning("Maps-scrape: 0 resultaatkaarten voor %r (url=%s, titel=%r)", query, page.url, page.title())
+                log.warning("Maps-scrape: 0 resultaatkaarten voor %r (url=%s)", query, page.url)
 
             for name, href in place_urls:
                 if time.time() > deadline:
@@ -1431,12 +1437,31 @@ def guess_club_website(name: str) -> str:
 def _scrape_maps_with_watchdog(niche: str, city: str, count: int, timeout_s: int = 240) -> list:
     """Draai de Maps-scrape met een harde timeout, zodat een vastgelopen browser nooit de hele job blokkeert."""
     from concurrent.futures import TimeoutError as _FuturesTimeout
+    worker_info = {}
+
+    def _run():
+        worker_info["tid"] = threading.get_ident()
+        return scrape_google_maps(niche, city, count)
+
     ex = ThreadPoolExecutor(max_workers=1)
-    fut = ex.submit(scrape_google_maps, niche, city, count)
+    fut = ex.submit(_run)
     try:
         return fut.result(timeout=timeout_s)
     except _FuturesTimeout:
         log.error("Maps-scrape watchdog: vastgelopen na %ds voor %r / %r", timeout_s, niche, city)
+        # Houdt de vastgelopen scrape het browser-slot vast? Dan is er maar
+        # één browser actief (slots=1) en kunnen we die veilig hard opruimen —
+        # dat laat de hangende playwright-call crashen zodat het slot vrijkomt.
+        with _slot_lock:
+            holds_slot = worker_info.get("tid") in _slot_holders
+        if holds_slot:
+            pids = _list_chromium_pids()
+            log.warning("Watchdog: vastgelopen scrape houdt het browser-slot vast — %d chromium-processen opruimen", len(pids))
+            for pid in pids:
+                try:
+                    os.kill(pid, 9)
+                except Exception:
+                    pass
         raise RuntimeError("De zoek-browser op de server reageert niet — probeer het over een paar minuten opnieuw")
     finally:
         ex.shutdown(wait=False, cancel_futures=True)
