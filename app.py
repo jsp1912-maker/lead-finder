@@ -23,6 +23,24 @@ from models import Lead, User, db
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("leadfinder")
 
+# Ring buffer met recente logregels, uitleesbaar via /api/debug
+import collections
+
+_log_buffer = collections.deque(maxlen=300)
+
+
+class _BufferLogHandler(logging.Handler):
+    def emit(self, record):
+        try:
+            _log_buffer.append(self.format(record))
+        except Exception:
+            pass
+
+
+_buffer_handler = _BufferLogHandler()
+_buffer_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+logging.getLogger().addHandler(_buffer_handler)
+
 app = Flask(__name__)
 app.config['TEMPLATES_AUTO_RELOAD'] = True
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-change-in-production')
@@ -1302,6 +1320,19 @@ def guess_club_website(name: str) -> str:
 
 # ── Background jobs ───────────────────────────────────────────────────────────
 
+def _scrape_maps_with_watchdog(niche: str, city: str, count: int, timeout_s: int = 120) -> list:
+    """Draai de Maps-scrape met een harde timeout, zodat een vastgelopen browser nooit de hele job blokkeert."""
+    from concurrent.futures import TimeoutError as _FuturesTimeout
+    ex = ThreadPoolExecutor(max_workers=1)
+    fut = ex.submit(scrape_google_maps, niche, city, count)
+    try:
+        return fut.result(timeout=timeout_s)
+    except _FuturesTimeout:
+        log.error("Maps-scrape watchdog: vastgelopen na %ds voor %r / %r", timeout_s, niche, city)
+        raise RuntimeError("De zoek-browser op de server reageert niet — probeer het over een paar minuten opnieuw")
+    finally:
+        ex.shutdown(wait=False, cancel_futures=True)
+
 def _names_similar(a: str, b: str, threshold: float = 0.82) -> bool:
     """True als twee namen waarschijnlijk dezelfde zaak/club zijn."""
     a, b = a.lower().strip(), b.lower().strip()
@@ -1354,7 +1385,7 @@ def run_search_job(job_id: str, niche: str, city: str, max_results: int, force_t
         fetch_count = max_results * 3
         search_city = city or _extract_city_from_name(niche) or ""
         jobs[job_id].update({"progress": 5, "message": f"Google Maps doorzoeken in {search_city}..."})
-        businesses = scrape_google_maps(niche, search_city, fetch_count)
+        businesses = _scrape_maps_with_watchdog(niche, search_city, fetch_count)
         seen_names = {b["name"].lower() for b in businesses}
 
         # Bij radius: zoek in omliggende plaatsen
@@ -1365,7 +1396,7 @@ def run_search_job(job_id: str, niche: str, city: str, max_results: int, force_t
                     break
                 pct = 10 + int((i / max(len(nearby), 1)) * 20)
                 jobs[job_id].update({"progress": pct, "message": f"Zoeken in {place} ({radius}km omgeving)..."})
-                extra = scrape_google_maps(niche, place, max(5, fetch_count // len(nearby) if nearby else fetch_count))
+                extra = _scrape_maps_with_watchdog(niche, place, max(5, fetch_count // len(nearby) if nearby else fetch_count))
                 for b in extra:
                     if b["name"].lower() not in seen_names:
                         businesses.append(b)
@@ -1375,7 +1406,7 @@ def run_search_job(job_id: str, niche: str, city: str, max_results: int, force_t
             gemeente = get_gemeente(search_city)
             if gemeente:
                 jobs[job_id].update({"progress": 15, "message": f"Weinig resultaten in {city}, ook zoeken in gemeente {gemeente}..."})
-                extra = scrape_google_maps(niche, gemeente, fetch_count)
+                extra = _scrape_maps_with_watchdog(niche, gemeente, fetch_count)
                 for b in extra:
                     if b["name"].lower() not in seen_names:
                         businesses.append(b)
@@ -1547,6 +1578,52 @@ def job_status(job_id):
     return jsonify(jobs.get(job_id, {"status": "not_found"}))
 
 
+@app.route("/api/debug")
+@login_required
+def debug_info():
+    """Serverstatus: geheugen, browserprocessen en recente logs — voor probleemdiagnose."""
+    info = {
+        "threads": len(threading.enumerate()),
+        "jobs_recent": {k: {"status": v.get("status"), "progress": v.get("progress"), "message": v.get("message")}
+                        for k, v in list(jobs.items())[-10:]},
+    }
+    try:
+        mem = {}
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith(("MemTotal", "MemAvailable", "SwapFree")):
+                    key, val = line.split(":", 1)
+                    mem[key] = val.strip()
+        info["meminfo"] = mem
+    except Exception:
+        pass
+    for path, key in [("/sys/fs/cgroup/memory.current", "cgroup_memory_current"),
+                      ("/sys/fs/cgroup/memory.max", "cgroup_memory_max"),
+                      ("/sys/fs/cgroup/memory/memory.usage_in_bytes", "cgroup_memory_current"),
+                      ("/sys/fs/cgroup/memory/memory.limit_in_bytes", "cgroup_memory_max")]:
+        try:
+            with open(path) as f:
+                info[key] = f.read().strip()
+        except Exception:
+            pass
+    try:
+        proc_names = []
+        for pid in os.listdir("/proc"):
+            if pid.isdigit():
+                try:
+                    with open(f"/proc/{pid}/comm") as f:
+                        proc_names.append(f.read().strip())
+                except Exception:
+                    pass
+        info["totaal_processen"] = len(proc_names)
+        info["chromium_processen"] = sum(1 for n in proc_names if "chrom" in n.lower() or "headless" in n.lower())
+        info["node_processen"] = sum(1 for n in proc_names if n.lower().startswith("node"))
+    except Exception:
+        pass
+    info["log"] = list(_log_buffer)
+    return jsonify(info)
+
+
 @app.route("/api/job/<job_id>/cancel", methods=["POST"])
 @login_required
 def cancel_job(job_id):
@@ -1655,7 +1732,7 @@ def rescrape_lead(lead_id):
                     if website or not q_name.strip():
                         break
                     try:
-                        businesses = scrape_google_maps(q_name, q_city, 5)
+                        businesses = _scrape_maps_with_watchdog(q_name, q_city, 5, timeout_s=60)
                         match = next((b for b in businesses if _names_similar(name, b["name"], threshold=0.45)), None)
                         if match:
                             lead["name"] = match["name"]
@@ -1876,7 +1953,7 @@ def run_manual_lead_job(job_id: str, name: str, force_type: str, user_id: int = 
                 continue
             try:
                 jobs[job_id].update({"progress": 20, "message": f"Google Maps zoeken: {q_name}..."})
-                businesses = scrape_google_maps(q_name, q_city, 5)
+                businesses = _scrape_maps_with_watchdog(q_name, q_city, 5, timeout_s=60)
                 match = next((b for b in businesses if _names_similar(name, b["name"], threshold=0.45)), None)
                 if match:
                     result_name = match["name"]
