@@ -426,10 +426,7 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--bg); color:var
       </div>
       <div class="progress-wrap" id="pw-b">
         <div class="progress-track"><div class="progress-fill" id="pf-b"></div><div class="progress-beer" id="pb-b">🍺</div><div class="progress-pct" id="pp-b"></div></div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <div class="progress-msg" id="pm-b" style="flex:1"></div>
-          <button class="btn-sm danger" id="cancel-b" onclick="cancelSearch('b')" style="font-size:0.75rem;padding:3px 10px">✕ Stop</button>
-        </div>
+        <div class="progress-msg" id="pm-b"></div>
       </div>
     </div>
 
@@ -511,10 +508,7 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--bg); color:var
       </div>
       <div class="progress-wrap" id="pw-s">
         <div class="progress-track"><div class="progress-fill" id="pf-s"></div><div class="progress-beer" id="pb-s">🍺</div><div class="progress-pct" id="pp-s"></div></div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <div class="progress-msg" id="pm-s" style="flex:1"></div>
-          <button class="btn-sm danger" id="cancel-s" onclick="cancelSearch('s')" style="font-size:0.75rem;padding:3px 10px">✕ Stop</button>
-        </div>
+        <div class="progress-msg" id="pm-s"></div>
       </div>
     </div>
 
@@ -662,7 +656,6 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--bg); color:var
 
 <script>
 let allLeads = [];
-let _cancelExcel = false;
 let allEvents = [];
 let activeFilter = 'all';
 let activeTab = 'business';
@@ -949,7 +942,6 @@ async function startExcelSearch(type, input) {
   const file = input.files[0];
   if (!file) return;
   input.value = '';
-  _cancelExcel = false;
 
   const isSport = type === 'sport';
   const pwId = isSport ? 'pw-s' : 'pw-b';
@@ -997,7 +989,6 @@ async function startExcelSearch(type, input) {
 
   let done = 0, gevonden = 0, nietGevonden = [], log = [];
   for (const name of names) {
-    if (_cancelExcel) break;
     setBeer(isSport ? 's' : 'b', Math.round((done / names.length) * 100));
     document.getElementById(pmId).textContent = `Zoeken (${done + 1}/${names.length}): ${name}`;
 
@@ -1126,18 +1117,6 @@ function setBeer(prefix, pct) {
   if (pp)   pp.textContent = pct + '%';
 }
 
-let _currentJobId = {};
-
-async function cancelSearch(prefix) {
-  _cancelExcel = true;
-  const job_id = _currentJobId[prefix];
-  if (job_id) await fetch(`/api/job/${job_id}/cancel`, { method: 'POST' });
-  document.getElementById(`pw-${prefix}`).style.display = 'none';
-  const btn = document.getElementById(`btn-${prefix}`);
-  if (btn) btn.disabled = false;
-  toast('Zoeken gestopt', '#f59e0b');
-}
-
 let _selectedIds = new Set();
 
 function onCardSelect(cb) {
@@ -1184,9 +1163,9 @@ async function bulkDelete() {
 }
 
 function pollJob(job_id, prefix, onDone) {
-  _currentJobId[prefix] = job_id;
   let finished = false;
   let visualPct = 5;
+  let realPct = 5;
   setBeer(prefix, visualPct);
 
   const t = setInterval(async () => {
@@ -1197,13 +1176,14 @@ function pollJob(job_id, prefix, onDone) {
       const r = await fetch(`/api/job/${job_id}`);
       job = await r.json();
     } catch (e) {
-      visualPct = Math.min(visualPct + 1, 99);
-      setBeer(prefix, visualPct);
       return;
     }
 
-    const realPct = job.progress || 5;
-    visualPct = realPct > visualPct ? realPct : Math.min(visualPct + 1, 99);
+    // Balk kruipt maximaal 10% voorbij de echte voortgang, zodat hij nooit
+    // op 99% staat terwijl er nog niets gevonden is
+    realPct = job.progress || realPct;
+    const cap = Math.min(realPct + 10, 99);
+    visualPct = realPct > visualPct ? realPct : Math.min(visualPct + 1, cap);
     setBeer(prefix, visualPct);
 
     const msg = document.getElementById(`pm-${prefix}`);

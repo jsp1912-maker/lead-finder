@@ -505,22 +505,60 @@ def check_website(website: str) -> str:
 
 def _dismiss_cookie_banner(page) -> None:
     """Try to click common cookie accept buttons so they don't block screenshots."""
+    # Meest specifieke teksten eerst — de "alles accepteren"-knop wint van losse toggles
     accept_texts = [
-        "toestaan", "accepteren", "accept", "alle cookies accepteren",
-        "akkoord", "ok", "agree", "allow all", "allow cookies",
-        "ik ga akkoord", "ja, ik ga akkoord", "cookies toestaan",
-        "alles accepteren", "accept all", "alle accepteren",
+        "alle cookies accepteren", "accepteer alle cookies", "alles accepteren",
+        "alle accepteren", "accept all cookies", "accept all", "allow all",
+        "cookies toestaan", "allow cookies", "ja, ik ga akkoord", "ik ga akkoord",
+        "accepteren", "accepteer", "akkoord", "toestaan", "accept", "agree", "ok",
     ]
-    try:
-        buttons = page.query_selector_all("button, a[role='button'], input[type='button'], input[type='submit']")
+    # Knoppen die we juist NIET willen raken ("niet toestaan", "weigeren", "instellingen")
+    reject_words = ["niet", "weiger", "afwijz", "reject", "deny", "decline",
+                    "instelling", "voorkeur", "settings", "aanpassen", "beheer",
+                    "manage", "meer info", "lees meer"]
+
+    def _click_accept_in(frame) -> bool:
+        try:
+            buttons = frame.query_selector_all(
+                "button, a[role='button'], input[type='button'], input[type='submit'], [role='button']"
+            )
+        except Exception:
+            return False
+        best_btn, best_rank = None, len(accept_texts)
         for btn in buttons:
             try:
-                text = (btn.inner_text() or "").strip().lower()
-                if any(t in text for t in accept_texts):
-                    btn.click(timeout=1000)
-                    return
+                text = (btn.inner_text() or btn.get_attribute("value") or "").strip().lower()
             except Exception:
                 continue
+            if not text or len(text) > 40:
+                continue
+            if any(w in text for w in reject_words):
+                continue
+            for rank, t in enumerate(accept_texts):
+                if t in text:
+                    if rank < best_rank:
+                        best_btn, best_rank = btn, rank
+                    break
+        if best_btn:
+            try:
+                best_btn.click(timeout=1500)
+                return True
+            except Exception:
+                return False
+        return False
+
+    try:
+        # Twee rondes: sommige sites tonen na de eerste klik nog een tweede laag,
+        # en banners zitten regelmatig in een iframe
+        for _ in range(2):
+            clicked = False
+            for frame in page.frames:
+                if _click_accept_in(frame):
+                    clicked = True
+                    page.wait_for_timeout(800)
+                    break
+            if not clicked:
+                break
     except Exception:
         pass
 
@@ -565,6 +603,31 @@ def take_screenshot(website: str, lead_id: str) -> str:
 
 # ── Logo finder ──────────────────────────────────────────────────────────────
 
+def _fetch_html_with_playwright(url: str) -> str:
+    """Haal de HTML op via een echte browser — voor sites die requests blokkeren (403/bot-detectie)."""
+    try:
+        with Stealth().use_sync(sync_playwright()) as p:
+            browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
+            try:
+                context = browser.new_context(
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+                    locale="nl-NL",
+                )
+                context.set_default_timeout(10000)
+                page = context.new_page()
+                page.goto(url, wait_until="domcontentloaded", timeout=15000)
+                page.wait_for_timeout(800)
+                return page.content()
+            finally:
+                try:
+                    browser.close()
+                except Exception:
+                    pass
+    except Exception as e:
+        log.warning("Playwright HTML-fallback mislukt voor %s: %s", url, e)
+        return ""
+
+
 def find_logo(website: str) -> str:
     """Find the club/business logo URL. Prefers favicons and small dedicated logo images."""
     if not website:
@@ -572,8 +635,20 @@ def find_logo(website: str) -> str:
     url = website if website.startswith("http") else f"https://{website}"
     base = url.rstrip("/")
     try:
-        r = requests.get(url, timeout=6, headers={"User-Agent": "Mozilla/5.0"})
-        soup = BeautifulSoup(r.text, "html.parser")
+        html = ""
+        try:
+            r = requests.get(url, timeout=6, headers={"User-Agent": "Mozilla/5.0"})
+            if r.status_code < 400:
+                html = r.text
+        except Exception:
+            pass
+        # Sites met botbescherming (403) laden wel in een echte browser
+        if not html:
+            html = _fetch_html_with_playwright(url)
+        if not html:
+            log.warning("Logo zoeken: geen HTML voor %s", url)
+            return ""
+        soup = BeautifulSoup(html, "html.parser")
 
         def abs_url(src):
             if not src:
