@@ -102,9 +102,10 @@ jobs = {}
 _leads_lock = threading.Lock()
 _job_executor = ThreadPoolExecutor(max_workers=4)
 
-# Max 2 browsers tegelijk op de héle server: het geheugen is 1GB en elke
-# Chromium kost 300-450MB — zonder limiet loopt de server vol en bevriest alles
-_BROWSER_SLOTS_TOTAL = 2
+# Max 1 browser tegelijk op de héle server: het geheugen is 1GB en elke
+# Chromium kost ~400MB — twee tegelijk opstarten duwt de server al over de limiet
+# (getest 2026-07-02: bij 2 gelijktijdige launches piekt het geheugen naar 920MB+ en bevriest alles)
+_BROWSER_SLOTS_TOTAL = 1
 _browser_slots = threading.Semaphore(_BROWSER_SLOTS_TOTAL)
 _slot_holders: dict = {}  # thread-id -> (omschrijving, starttijd)
 _slot_lock = threading.Lock()
@@ -174,6 +175,13 @@ def _zombie_sweeper():
 
 if os.name == "posix":
     threading.Thread(target=_zombie_sweeper, daemon=True).start()
+
+# Zuinige browserinstellingen — de server heeft maar 1GB geheugen
+_CHROMIUM_ARGS = [
+    "--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage",
+    "--disable-gpu", "--no-zygote", "--disable-extensions",
+    "--renderer-process-limit=2", "--disable-background-networking",
+]
 
 SPORT_KEYWORDS = ["voetbal", "hockey", "padel", "tennis", "basketbal", "volleybal",
                   "handbal", "zwemclub", "atletiek", "rugby", "cricket", "badminton"]
@@ -436,7 +444,7 @@ def _scrape_google_maps_inner(query: str, niche: str, city: str, max_results: in
     with sync_playwright() as p:
         browser = None
         try:
-            browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"])
+            browser = p.chromium.launch(headless=True, args=_CHROMIUM_ARGS)
             context = browser.new_context(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
                 viewport={"width": 1280, "height": 800},
@@ -674,9 +682,8 @@ def take_screenshot(website: str, lead_id: str) -> str:
         return ""
     try:
         with Stealth().use_sync(sync_playwright()) as p:
-            browser = p.chromium.launch(headless=True, args=[
+            browser = p.chromium.launch(headless=True, args=_CHROMIUM_ARGS + [
                 "--disable-blink-features=AutomationControlled",
-                "--no-sandbox",
             ])
             try:
                 context = browser.new_context(
@@ -713,7 +720,7 @@ def _fetch_html_with_playwright(url: str) -> str:
         return ""
     try:
         with Stealth().use_sync(sync_playwright()) as p:
-            browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
+            browser = p.chromium.launch(headless=True, args=_CHROMIUM_ARGS)
             try:
                 context = browser.new_context(
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
@@ -991,7 +998,7 @@ def find_email_and_contact(website: str) -> tuple:
             from playwright.sync_api import sync_playwright
             playwright_pages = [url, base + "/bestuur", base + "/contact", base + "/commissies", base + "/over-ons"]
             with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"])
+                browser = p.chromium.launch(headless=True, args=_CHROMIUM_ARGS)
                 try:
                     context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
                     context.set_default_timeout(10000)
@@ -1107,7 +1114,7 @@ def scrape_events(city: str, max_results: int) -> list:
 
 def _scrape_events_inner(city: str, max_results: int, events: list, seen: set, sources: list) -> list:
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"])
+        browser = p.chromium.launch(headless=True, args=_CHROMIUM_ARGS)
         context = browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             viewport={"width": 1280, "height": 800},
@@ -1421,7 +1428,7 @@ def guess_club_website(name: str) -> str:
 
 # ── Background jobs ───────────────────────────────────────────────────────────
 
-def _scrape_maps_with_watchdog(niche: str, city: str, count: int, timeout_s: int = 120) -> list:
+def _scrape_maps_with_watchdog(niche: str, city: str, count: int, timeout_s: int = 240) -> list:
     """Draai de Maps-scrape met een harde timeout, zodat een vastgelopen browser nooit de hele job blokkeert."""
     from concurrent.futures import TimeoutError as _FuturesTimeout
     ex = ThreadPoolExecutor(max_workers=1)
@@ -1468,7 +1475,8 @@ def run_search_job(job_id: str, niche: str, city: str, max_results: int, force_t
     jobs[job_id] = {"status": "running", "progress": 0, "message": "Google Maps doorzoeken..."}
     log.info("Zoekjob %s gestart: niche=%r stad=%r max=%d", job_id, niche, city, max_results)
     start_time = time.time()
-    MAX_JOB_SECONDS = 180
+    # Ruim genoeg voor serieel browserwerk (1 browser tegelijk op de server)
+    MAX_JOB_SECONDS = 300
     try:
         if force_type == "sport":
             sport = True
@@ -1483,7 +1491,8 @@ def run_search_job(job_id: str, niche: str, city: str, max_results: int, force_t
             c = l.get("city", "").lower().strip()
             existing_names_by_city.setdefault(c, []).append(l["name"])
 
-        fetch_count = max_results * 3
+        # ×2 (was ×3): elke kandidaat kost serieel browsertijd, dus niet te veel ophalen
+        fetch_count = max_results * 2
         search_city = city or _extract_city_from_name(niche) or ""
         jobs[job_id].update({"progress": 5, "message": f"Google Maps doorzoeken in {search_city}..."})
         businesses = _scrape_maps_with_watchdog(niche, search_city, fetch_count)
@@ -1528,7 +1537,7 @@ def run_search_job(job_id: str, niche: str, city: str, max_results: int, force_t
 
         new_businesses = [b for b in businesses if not _is_duplicate(b)]
         # Haal meer op dan nodig zodat we leads zonder website kunnen overslaan
-        candidate_pool = new_businesses[:max_results * 3]
+        candidate_pool = new_businesses[:max_results * 2]
         total_candidates = len(candidate_pool)
 
         if total_candidates == 0:
@@ -1846,7 +1855,7 @@ def rescrape_lead(lead_id):
                     if website or not q_name.strip():
                         break
                     try:
-                        businesses = _scrape_maps_with_watchdog(q_name, q_city, 5, timeout_s=60)
+                        businesses = _scrape_maps_with_watchdog(q_name, q_city, 5, timeout_s=150)
                         match = next((b for b in businesses if _names_similar(name, b["name"], threshold=0.45)), None)
                         if match:
                             lead["name"] = match["name"]
@@ -2067,7 +2076,7 @@ def run_manual_lead_job(job_id: str, name: str, force_type: str, user_id: int = 
                 continue
             try:
                 jobs[job_id].update({"progress": 20, "message": f"Google Maps zoeken: {q_name}..."})
-                businesses = _scrape_maps_with_watchdog(q_name, q_city, 5, timeout_s=60)
+                businesses = _scrape_maps_with_watchdog(q_name, q_city, 5, timeout_s=150)
                 match = next((b for b in businesses if _names_similar(name, b["name"], threshold=0.45)), None)
                 if match:
                     result_name = match["name"]
