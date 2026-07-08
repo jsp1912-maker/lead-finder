@@ -17,6 +17,7 @@ from flask import Flask, jsonify, redirect, render_template, request, send_from_
 from flask_login import LoginManager, current_user, login_required, login_user, logout_user
 from playwright.sync_api import sync_playwright
 from playwright_stealth import Stealth
+from sqlalchemy.orm import defer as _sa_defer
 
 from models import Lead, User, db
 
@@ -278,11 +279,19 @@ def _load_leads_unsafe(user_id=None):
                 return json.load(f)
         return []
     with app.app_context():
-        rows = Lead.query.filter_by(user_id=user_id).order_by(Lead.created_at.desc()).all()
+        # Alleen data + heeft-screenshot-vlag selecteren. NOOIT hele Lead-rijen
+        # laden: dan haalt SQLAlchemy ook de screenshot-kolom (~0,5MB/lead) op
+        # en loopt het geheugen vol zodra er veel leads zijn.
+        rows = (
+            db.session.query(Lead.data, Lead.screenshot.isnot(None))
+            .filter(Lead.user_id == user_id)
+            .order_by(Lead.created_at.desc())
+            .all()
+        )
         result = []
-        for row in rows:
-            d = dict(row.data)
-            d["has_screenshot"] = bool(row.screenshot)
+        for data, has_shot in rows:
+            d = dict(data)
+            d["has_screenshot"] = bool(has_shot)
             result.append(d)
         return result
 
@@ -294,7 +303,11 @@ def _save_leads_unsafe(leads, user_id=None):
             json.dump(slim, f, ensure_ascii=False, indent=2)
         return
     with app.app_context():
-        existing_ids = {row.id: row for row in Lead.query.filter_by(user_id=user_id).all()}
+        # defer(screenshot): rijen laden zonder de zware screenshot-kolom
+        existing_ids = {
+            row.id: row
+            for row in Lead.query.options(_sa_defer(Lead.screenshot)).filter_by(user_id=user_id).all()
+        }
         new_ids = {l["id"] for l in leads}
         for lead_id in list(existing_ids.keys()):
             if lead_id not in new_ids:
