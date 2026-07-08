@@ -505,9 +505,12 @@ def get_gemeente(city: str) -> str:
 
 # ── Google Maps scraper ───────────────────────────────────────────────────────
 
-def scrape_google_maps(niche: str, city: str, max_results: int) -> list:
+def scrape_google_maps(niche: str, city: str, max_results: int, results: list = None) -> list:
     query = f"{niche} {city}".strip() if city and city.lower() not in ("", "nederland") else niche
-    results = []
+    # De aanroeper (watchdog) kan een lijst meegeven zodat deelresultaten
+    # niet verloren gaan als de scrape halverwege wordt afgebroken
+    if results is None:
+        results = []
     # Harde limiet zodat één vastgelopen scrape nooit de hele job blokkeert
     deadline = time.time() + 90
     log.info("Maps-scrape start: %r (max %d)", query, max_results)
@@ -1587,10 +1590,13 @@ def _scrape_maps_with_watchdog(niche: str, city: str, count: int, timeout_s: int
     """Draai de Maps-scrape met een harde timeout, zodat een vastgelopen browser nooit de hele job blokkeert."""
     from concurrent.futures import TimeoutError as _FuturesTimeout
     worker_info = {}
+    # Gedeelde lijst: de scraper vult deze incrementeel, zodat we bij een
+    # ingreep van de watchdog de al gevonden plaatsen kunnen redden
+    partial_results: list = []
 
     def _run():
         worker_info["tid"] = threading.get_ident()
-        return scrape_google_maps(niche, city, count)
+        return scrape_google_maps(niche, city, count, results=partial_results)
 
     ex = ThreadPoolExecutor(max_workers=1)
     fut = ex.submit(_run)
@@ -1611,6 +1617,15 @@ def _scrape_maps_with_watchdog(niche: str, city: str, count: int, timeout_s: int
                     os.kill(pid, 9)
                 except Exception:
                     pass
+        # De kill laat de hangende playwright-call crashen; geef de worker
+        # even de tijd om netjes terug te keren met wat al binnen is
+        try:
+            return fut.result(timeout=15)
+        except Exception:
+            pass
+        if partial_results:
+            log.warning("Watchdog: %d deelresultaten gered voor %r / %r", len(partial_results), niche, city)
+            return list(partial_results)
         raise RuntimeError("De zoek-browser op de server reageert niet — probeer het over een paar minuten opnieuw")
     finally:
         ex.shutdown(wait=False, cancel_futures=True)
