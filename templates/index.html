@@ -715,9 +715,11 @@ function switchTab(tab) {
 }
 
 function switchView(filter) {
-  activeTab = 'business';
+  // 'overview': geen type-filter, anders verdwijnen bv. alle sportclubs
+  // uit "Alle leads" en de status-weergaven
+  activeTab = 'overview';
   ['business','sport','events'].forEach(t => {
-    document.getElementById(`panel-${t}`).style.display = t === 'business' ? 'block' : 'none';
+    document.getElementById(`panel-${t}`).style.display = 'none';
     document.getElementById(`nav-${t}`).classList.remove('active');
   });
   ['all','nieuw','gecontacteerd','geinteresseerd','afgewezen','dashboard'].forEach(v =>
@@ -726,7 +728,8 @@ function switchView(filter) {
 
   const isDash = filter === 'dashboard';
   document.getElementById('filter-bar').style.display = isDash ? 'none' : 'flex';
-  document.querySelector('.search-panel').style.display = isDash ? 'none' : 'block';
+  // Zoekpaneel hoort bij de zoek-tabbladen, niet bij het overzicht
+  document.querySelector('.search-panel').style.display = 'none';
   document.getElementById('leads-grid').style.display = isDash ? 'none' : 'grid';
   document.getElementById('events-grid').style.display = 'none';
   document.getElementById('dashboard-view').style.display = isDash ? 'block' : 'none';
@@ -1299,7 +1302,6 @@ function businessCardHTML(l) {
   const rating = l.rating ? ` ★${l.rating}` : '';
 
   return `<div class="card" id="card-${l.id}">
-    <input type="checkbox" class="card-checkbox" data-id="${l.id}" onchange="onCardSelect(this)" style="position:absolute;top:8px;left:8px;width:16px;height:16px;cursor:pointer;z-index:10;accent-color:#005826">
     ${img}
     <div class="card-body">
       <div class="card-top">
@@ -1359,7 +1361,6 @@ function sportCardHTML(l) {
       : '';
 
   return `<div class="card sport-card" id="card-${l.id}">
-    <input type="checkbox" class="card-checkbox" data-id="${l.id}" onchange="onCardSelect(this)" style="position:absolute;top:8px;left:8px;width:16px;height:16px;cursor:pointer;z-index:10;accent-color:#005826">
     ${img}
     <div class="card-body">
       <div class="card-top">
@@ -1639,14 +1640,20 @@ async function rescrapeLead(id, btn) {
   try {
     const res = await fetch(`/api/leads/${id}/rescrape`, {method:'POST'});
     const {job_id} = await res.json();
-    const job = await waitForJobCompletion(job_id, 120);
-    if (job && job.lead) {
+    // Scrapen kan lang duren (browser-slot kan bezet zijn), dus ruim wachten
+    const job = await waitForJobCompletion(job_id, 300);
+    if (job && job.status === 'done' && job.lead) {
       const idx = allLeads.findIndex(l => l.id === id);
       if (idx !== -1) allLeads[idx] = job.lead;
       renderLeads(); updateStats();
       toast('Lead bijgewerkt!');
+    } else if (job && job.status === 'error') {
+      toast(`Opnieuw scrapen mislukt: ${job.message || 'onbekende fout'}`, '#ef4444');
     } else {
-      toast('Niets nieuws gevonden');
+      // Job loopt nog door op de server — ververs de lijst zodat
+      // alles wat al wél is opgeslagen meteen zichtbaar wordt
+      await loadLeads();
+      toast('Scrapen duurt langer dan normaal — lijst is ververst');
     }
   } catch(e) {
     toast('Fout bij opnieuw scrapen');

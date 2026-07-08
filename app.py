@@ -2117,6 +2117,9 @@ def rescrape_lead(lead_id):
                         break
                 _save_leads_unsafe(all_leads, uid)
 
+            # has_screenshot bijwerken: een verse screenshot zit in lead["screenshot"]
+            # maar gaat niet mee in het antwoord (te groot voor de job-JSON)
+            lead["has_screenshot"] = bool(lead.get("screenshot") or lead.get("has_screenshot"))
             jobs[job_id] = {"status": "done", "progress": 100, "message": "Klaar!",
                             "lead": {k: v for k, v in lead.items() if k != "screenshot"}}
         except Exception as e:
