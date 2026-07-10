@@ -1541,7 +1541,11 @@ _PRICE_RE = re.compile(r"€?\s*\d+[.,]\d{2}|€\s*\d+|\d+[.,]-")
 # Korte teksten met deze woorden zijn navigatie of marketing, geen gerechtnaam
 _NOT_DISH_WORDS = ["menu", "kaart", "bestel", "reserveer", "contact", "home", "over ons",
                    "openingstijd", "cookie", "privacy", "bezorg", "afhalen", "onze", "nieuws",
-                   "vacature", "cadeau", "arrangement", "volg ons", "lees meer"]
+                   "vacature", "cadeau", "arrangement", "volg ons", "lees meer",
+                   # Actietaal en dagaanduidingen ("Vrijdag Pizza-avond!") zijn geen gerechten
+                   "maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag", "zondag",
+                   "avond", "middag", "elke", "iedere", "actie", "korting", "gratis", "deal",
+                   "vanaf", "buffet", "all you can", "!"]
 
 
 def _extract_menu_snippets(soup) -> list:
