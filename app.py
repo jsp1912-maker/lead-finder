@@ -1082,9 +1082,50 @@ def find_phone_from_website(website: str) -> str:
     return ""
 
 
+_EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
+_EMAIL_JUNK = ["example", "sentry", "wix", "wordpress", "schema", ".png", ".jpg", "noreply",
+               "privacy", "squarespace", "shopify", "weebly", "jimdo", "hostinger",
+               "google", "facebook", "instagram", "twitter", "support@", "no-reply", "donotreply",
+               # Invulvoorbeelden die soms letterlijk op sites staan
+               "naam@", "@domein", "voorbeeld", "@email.", "jouwnaam"]
+
+
+def _emails_from_url(page_url: str) -> list:
+    """Alle e-mailadressen van één pagina (tekst + mailto-links), zonder rommel."""
+    try:
+        r = requests.get(page_url, timeout=8, headers={"User-Agent": "Mozilla/5.0"}, allow_redirects=True)
+        if r.status_code >= 400:
+            return []
+        emails = [e for e in _EMAIL_RE.findall(r.text) if not any(j in e.lower() for j in _EMAIL_JUNK)]
+        for a in BeautifulSoup(r.text, "html.parser").find_all("a", href=True):
+            if a["href"].startswith("mailto:"):
+                candidate = a["href"][7:].split("?")[0].strip()
+                if candidate and "@" in candidate and not any(j in candidate.lower() for j in _EMAIL_JUNK):
+                    emails.append(candidate)
+        return emails
+    except Exception:
+        return []
+
+
+def _add_board_emails(lead: dict):
+    """Bestuurspagina's van sportclubs staan vol e-mailadressen (voorzitter@,
+    sponsoring@, jeugd@...) — die horen in de uitklapbare adressenlijst."""
+    page = lead.get("board_page")
+    if not page:
+        return
+    emails = list(lead.get("emails") or [])
+    for e in _emails_from_url(page):
+        e = e.strip().strip(".")
+        if e and e.lower() not in (x.lower() for x in emails):
+            emails.append(e)
+    lead["emails"] = emails[:10]
+    if not lead.get("email") and emails:
+        lead["email"] = emails[0]
+
+
 def find_email_and_contact(website: str) -> tuple:
     if not website:
-        return "", ""
+        return "", "", []
     url = website if website.startswith("http") else f"https://{website}"
     base = url.rstrip("/")
     pages = [
@@ -1100,10 +1141,8 @@ def find_email_and_contact(website: str) -> tuple:
         base + "/secretariaat",
         base + "/bestuur",
     ]
-    email_pattern = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
-    junk = ["example", "sentry", "wix", "wordpress", "schema", ".png", ".jpg", "noreply",
-            "privacy", "squarespace", "shopify", "weebly", "jimdo", "hostinger",
-            "google", "facebook", "instagram", "twitter", "support@", "no-reply", "donotreply"]
+    email_pattern = _EMAIL_RE
+    junk = _EMAIL_JUNK
     fake_contacts = {"to let", "te huur", "te koop", "for sale", "for rent", "n/a", "info",
                      "contact", "admin", "unknown", "webmaster", "hello", "team", "service"}
 
@@ -1128,7 +1167,8 @@ def find_email_and_contact(website: str) -> tuple:
         final_base = home_r.url.rstrip("/").rsplit("/", 1)[0] if "/" in home_r.url else home_r.url.rstrip("/")
         for a in home_soup.find_all("a", href=True):
             href = a["href"].lower()
-            if any(kw in href for kw in ["contact", "over-ons", "about", "bestuur", "secretariaat"]):
+            if any(kw in href for kw in ["contact", "over-ons", "about", "bestuur", "secretariaat",
+                                         "commissie", "organisatie", "vereniging", "wie-is-wie", "clubinfo"]):
                 full = a["href"] if a["href"].startswith("http") else final_base + "/" + a["href"].lstrip("/")
                 if full not in pages:
                     pages.append(full)
@@ -1137,10 +1177,19 @@ def find_email_and_contact(website: str) -> tuple:
 
     visited = set()
     for page_url in pages:
+        # Vroeger stopte de zoektocht zodra één adres + contactnaam gevonden was —
+        # daardoor werd de bestuurspagina (mét alle adressen) vaak overgeslagen.
+        # Nu doorzoeken we alle pagina's, met een plafond tegen trage sites.
+        if len(visited) >= 14:
+            break
         if page_url in visited:
             continue
         visited.add(page_url)
         try:
+            # Korte pauze tussen pagina's: 14 verzoeken vlak achter elkaar
+            # triggert bij sommige clubsites een blokkade (HTTP 429)
+            if len(visited) > 1:
+                time.sleep(0.4)
             r = requests.get(page_url, timeout=6, headers={"User-Agent": "Mozilla/5.0"}, allow_redirects=True)
             if r.status_code >= 400:
                 continue
@@ -1152,10 +1201,12 @@ def find_email_and_contact(website: str) -> tuple:
                     candidate = href[7:].split("?")[0].strip()
                     if candidate and "@" in candidate and not any(j in candidate.lower() for j in junk):
                         page_emails.append(candidate)
-            found_emails = set(page_emails)
             _collect_emails(page_emails)
-            if found_emails and not email:
-                email = next(iter(found_emails))
+            if page_emails and not email:
+                # Voorkeur voor het algemene clubadres als hoofdadres
+                email = next((e for e in page_emails
+                              if e.lower().startswith(("info@", "contact@", "secretaris@", "secretariaat@"))),
+                             page_emails[0])
             if not contact:
                 text = soup_email.get_text()
                 for pat in name_patterns:
@@ -1169,8 +1220,6 @@ def find_email_and_contact(website: str) -> tuple:
                                 and candidate.lower() not in fake_contacts):
                             contact = candidate
                         break
-            if email and contact:
-                break
         except Exception:
             continue
 
@@ -2016,6 +2065,7 @@ def scrape_lead_details(b: dict, is_sport: bool = False):
         b["address"] = find_address_from_website(website)
     if is_sport:
         b["board_page"] = find_board_page(website)
+        _add_board_emails(b)
     email_html = generate_cold_email(b)
     save_email(b["id"], email_html)
     b["cold_email"] = ""
@@ -2510,6 +2560,11 @@ def rescrape_lead(lead_id):
                     lead["board_page"] = find_board_page(website)
                 except Exception:
                     pass
+            if lead.get("type") == "sport":
+                try:
+                    _add_board_emails(lead)
+                except Exception:
+                    pass
             if website:
                 # Altijd opnieuw zoeken: een eerder gekozen logo kan een wazig mini-icoontje zijn
                 lead["logo_url"] = find_logo(website) or lead.get("logo_url", "")
@@ -2761,6 +2816,10 @@ def run_manual_lead_job(job_id: str, name: str, force_type: str, user_id: int = 
             "status": "nieuw",
             "added": datetime.now().isoformat(),
         }
+        try:
+            _add_board_emails(lead)
+        except Exception:
+            pass
 
         try:
             lead["website_status"] = check_website(website) if website else ""
