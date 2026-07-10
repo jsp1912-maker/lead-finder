@@ -10,6 +10,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from difflib import SequenceMatcher
+from urllib.parse import urljoin
 
 import requests
 from bs4 import BeautifulSoup
@@ -1505,6 +1506,107 @@ def _apply_email_template(raw_html: str, name: str, logo_url: str, is_sport: boo
     return str(soup)
 
 
+# ── Menukaart → bier-spijscombinatie (eetgelegenheden) ───────────────────────
+
+# Volgorde = prioriteit bij gelijke score. Trefwoorden matchen ook samenstellingen
+# ("vis" matcht "visgerechten") maar niet middenin een woord ("advies" niet).
+_BEER_PAIRINGS = [
+    ("Pizza", ["pizza"], "Birra Moretti",
+     "Birra Moretti is dé Italiaanse klassieker: zacht mout en subtiele hop, precies wat een pizza uit de oven vraagt."),
+    ("Pasta", ["pasta", "spaghetti", "lasagne", "risotto", "gnocchi"], "Birra Moretti",
+     "De zachte, licht moutige smaak van Birra Moretti sluit van nature aan bij Italiaanse gerechten."),
+    ("Spareribs", ["spareribs", "sparerib", "ribs", "pulled pork", "bbq", "barbecue"], "Texels Skuumkoppe",
+     "Het donkere tarwebier Texels Skuumkoppe heeft karamelzoete tonen die de rooksmaak van gegrild vlees versterken."),
+    ("Burgers", ["burger", "hamburger", "cheeseburger"], "Lagunitas IPA",
+     "De frisse hopbitterheid van Lagunitas IPA snijdt mooi door de volle smaak van een burger heen."),
+    ("Steak", ["steak", "biefstuk", "entrecote", "tournedos", "ribeye", "bavette"], "Affligem Dubbel",
+     "De rijke karameltonen van Affligem Dubbel geven gegrild rundvlees extra diepgang."),
+    ("Saté", ["saté", "satay"], "Oedipus Mannenliefde",
+     "Oedipus Mannenliefde, gebrouwen met citroengras en Szechuanpeper, geeft een frisse tegenhanger aan de rijke pindasaus."),
+    ("Aziatische gerechten", ["curry", "thais", "thaise", "ramen", "noodles", "wok", "sushi", "poke", "dim sum"], "Oedipus Mannenliefde",
+     "Het kruidige, frisse Oedipus Mannenliefde is gebrouwen met citroengras en past daardoor verrassend goed bij Aziatische smaken."),
+    ("Visgerechten", ["zalm", "kabeljauw", "tonijn", "garnalen", "mosselen", "kibbeling", "vis", "zeebaars", "gamba"], "Affligem Blond",
+     "Het licht fruitige Affligem Blond begeleidt vis zonder de fijne smaak te overheersen."),
+    ("Stoofgerechten", ["stoofvlees", "stoofpot", "stoverij", "sudderlap"], "Affligem Dubbel",
+     "Affligem Dubbel heeft dezelfde donkere, zoete diepte als een goed stoofgerecht — ze versterken elkaar."),
+    ("Kaasplank", ["kaasplank", "kaasfondue", "borrelplank"], "Affligem Tripel",
+     "De kruidige volheid van Affligem Tripel is een klassieke combinatie met gerijpte kazen."),
+    ("Desserts", ["dessert", "chocolade", "appeltaart", "tiramisu", "cheesecake"], "Mort Subite Kriek",
+     "Het friszoete kersenbier Mort Subite Kriek komt naast een dessert perfect tot zijn recht."),
+]
+
+_MENU_LINK_WORDS = ["menu", "menukaart", "kaart", "lunch", "diner", "dinerkaart", "gerechten"]
+
+
+def find_menu_pairing(website: str) -> tuple | None:
+    """Zoek op de website (en menupagina's) het meest genoemde gerecht en koppel
+    er een Heineken-speciaalbier aan. Geeft (gerecht, bier, uitleg) of None."""
+    if not website:
+        return None
+    url = website if website.startswith("http") else f"https://{website}"
+    texts = []
+    menu_pages = []
+    try:
+        r = requests.get(url, timeout=6, headers={"User-Agent": "Mozilla/5.0"}, allow_redirects=True)
+        if r.status_code < 400:
+            soup = BeautifulSoup(r.text, "html.parser")
+            texts.append(soup.get_text(" ", strip=True))
+            for a in soup.find_all("a", href=True):
+                label = f"{a.get_text()} {a['href']}".lower()
+                if any(w in label for w in _MENU_LINK_WORDS):
+                    full = urljoin(r.url, a["href"])
+                    if full not in menu_pages and not full.lower().endswith(".pdf"):
+                        menu_pages.append(full)
+    except Exception:
+        return None
+    # Max 2 menupagina's ophalen: elke fetch kost tijd binnen het jobbudget
+    for page_url in menu_pages[:2]:
+        try:
+            r = requests.get(page_url, timeout=6, headers={"User-Agent": "Mozilla/5.0"}, allow_redirects=True)
+            if r.status_code < 400 and "text/html" in r.headers.get("content-type", ""):
+                texts.append(BeautifulSoup(r.text, "html.parser").get_text(" ", strip=True))
+        except Exception:
+            continue
+
+    full_text = " ".join(texts).lower()
+    if not full_text.strip():
+        return None
+    best = None
+    best_hits = 0
+    for dish, keywords, beer, why in _BEER_PAIRINGS:
+        hits = sum(len(re.findall(rf"\b{re.escape(kw)}", full_text)) for kw in keywords)
+        if hits > best_hits:
+            best, best_hits = (dish, beer, why), hits
+    return best
+
+
+# Letterlijke blokken uit het eten-sjabloon (static/email-templates/eten.html)
+_PAIRING_BLOCK_2 = "<p><strong>[Gerecht 2] - [Speciaalbier 2]</strong></p><p>Korte toelichting.</p>"
+_PAIRING_SECTION = (
+    "<p><strong>Welke bieren passen goed bij jullie gerechten</strong></p>"
+    "<table><tr><td><p><strong>[Gerecht 1] - [Speciaalbier 1]</strong></p>"
+    "<p>Korte toelichting.</p>" + _PAIRING_BLOCK_2 + "</td></tr></table>"
+)
+
+
+def _fill_menu_pairing(raw_html: str, website: str) -> str:
+    """Vul het bier-spijsblok van de eetmail met een gerecht van de menukaart.
+
+    Geen gerecht gevonden → hele blok verwijderen, zodat er nooit een lege
+    sjabloontekst als "[Gerecht 1]" in een verstuurde mail staat."""
+    try:
+        pairing = find_menu_pairing(website)
+    except Exception:
+        log.exception("Menukoppeling mislukt voor %s", website)
+        pairing = None
+    if not pairing:
+        return raw_html.replace(_PAIRING_SECTION, "")
+    dish, beer, why = pairing
+    raw_html = raw_html.replace(_PAIRING_BLOCK_2, "")
+    raw_html = raw_html.replace("[Gerecht 1]", dish).replace("[Speciaalbier 1]", beer)
+    return raw_html.replace("Korte toelichting.", why, 1)
+
+
 def generate_cold_email(business: dict) -> str:
     name = business["name"]
     niche = business.get("niche", "").lower()
@@ -1524,6 +1626,7 @@ def generate_cold_email(business: dict) -> str:
     else:
         raw_html = EMAIL_TEMPLATES.get("eten", "")
         if raw_html:
+            raw_html = _fill_menu_pairing(raw_html, business.get("website", ""))
             return _apply_email_template(raw_html, name, logo_url, is_sport=False)
 
     return f"<p>Email template niet beschikbaar voor {name}</p>"
