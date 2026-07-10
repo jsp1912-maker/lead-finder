@@ -16,6 +16,8 @@ class User(UserMixin, db.Model):
     name = db.Column(db.String(100), nullable=False)
     email = db.Column(db.String(150), unique=True, nullable=False)
     password_hash = db.Column(db.String(256), nullable=False)
+    # Telefoonnummer van de accountmanager: komt in de handtekening van elke mail
+    phone = db.Column(db.String(30), default="")
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     leads = db.relationship("Lead", backref="owner", lazy=True, cascade="all, delete-orphan")
 

@@ -320,6 +320,10 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--bg); color:var
     <span class="nav-count" id="nc-afgewezen">0</span>
   </button>
 
+  <button class="nav-item" onclick="openProfile()">
+    <span class="nav-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span> Mijn gegevens
+  </button>
+
   <div class="sidebar-stats">
     <div class="sidebar-stat"><span class="sidebar-stat-label">Totaal leads</span><span class="sidebar-stat-val" id="s-total">0</span></div>
     <div class="sidebar-stat"><span class="sidebar-stat-label">Sportclubs</span><span class="sidebar-stat-val" id="s-missing" style="color:#4ade80">0</span></div>
@@ -618,6 +622,21 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--bg); color:var
     <div id="dashboard-view" style="display:none"></div>
   </div>
 
+</div>
+
+<!-- Profiel modal -->
+<div class="overlay" id="modal-profile">
+  <div class="modal" style="max-width:420px;width:95vw">
+    <div class="modal-head">
+      <h3>Mijn gegevens</h3>
+      <button class="btn-close" onclick="closeModal('modal-profile')">&#x2715;</button>
+    </div>
+    <p style="font-size:0.85rem;color:#64748b;margin:0 0 12px">Deze gegevens komen automatisch in de aanhef en handtekening van elke mail, in plaats van de voorbeeldgegevens uit het sjabloon.</p>
+    <div class="field" style="margin-bottom:10px"><label>Naam</label><input id="prof-name" disabled></div>
+    <div class="field" style="margin-bottom:10px"><label>E-mail</label><input id="prof-email" disabled></div>
+    <div class="field" style="margin-bottom:14px"><label>Telefoonnummer</label><input id="prof-phone" placeholder="+31612345678"></div>
+    <button class="btn-copy" style="background:#005826" onclick="saveProfile()">Opslaan</button>
+  </div>
 </div>
 
 <!-- Email modal -->
@@ -1497,6 +1516,30 @@ function showBoard(id) {
 }
 
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+async function openProfile() {
+  const r = await fetch('/api/profile');
+  const p = await r.json();
+  document.getElementById('prof-name').value = p.name || '';
+  document.getElementById('prof-email').value = p.email || '';
+  document.getElementById('prof-phone').value = p.phone || '';
+  document.getElementById('modal-profile').classList.add('open');
+}
+
+async function saveProfile() {
+  const phone = document.getElementById('prof-phone').value.trim();
+  const r = await fetch('/api/profile', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({phone})
+  });
+  if (r.ok) {
+    closeModal('modal-profile');
+    toast('Gegevens opgeslagen — je ziet ze voortaan in elke mail');
+  } else {
+    toast('Opslaan mislukt', '#ef4444');
+  }
+}
 
 async function markEmailSent() {
   if (!currentEmailLeadId) return;

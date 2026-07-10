@@ -106,6 +106,15 @@ with app.app_context():
         _migrate_screenshots_to_column()
     except Exception:
         log.exception("Screenshot-migratie mislukt")
+    try:
+        from sqlalchemy import inspect as _sa_inspect
+        from sqlalchemy import text as _sa_text
+        _user_cols = [c["name"] for c in _sa_inspect(db.engine).get_columns("users")]
+        if "phone" not in _user_cols:
+            db.session.execute(_sa_text("ALTER TABLE users ADD COLUMN phone VARCHAR(30)"))
+            db.session.commit()
+    except Exception:
+        log.exception("Telefoonkolom-migratie mislukt")
 
 SCREENSHOTS_DIR = os.path.join(os.path.dirname(__file__), "screenshots")
 DATA_FILE = os.path.join(os.path.dirname(__file__), "leads_db.json")
@@ -1704,6 +1713,36 @@ def _fill_menu_pairing(raw_html: str, website: str) -> str:
     return raw_html
 
 
+# Vaste afzendergegevens zoals ze letterlijk in de Word-sjablonen staan
+_TEMPLATE_SENDER_NAME = "Julian Vaanholt"
+_TEMPLATE_SENDER_EMAIL = "julian.vaanholt@heineken.com"
+_TEMPLATE_SENDER_PHONE = "+31649175451"
+
+
+def _personalize_email(html: str, user) -> str:
+    """Vervang de afzender uit het sjabloon door de ingelogde gebruiker, zodat
+    iedere accountmanager zijn eigen naam, e-mail en telefoon in de mail heeft.
+
+    Gebeurt bij het openen/kopiëren van de mail (niet bij het genereren), zodat
+    het ook meteen werkt voor alle bestaande leads."""
+    import html as html_mod
+    if not html or not user:
+        return html
+    name = (getattr(user, "name", "") or "").strip()
+    email = (getattr(user, "email", "") or "").strip()
+    phone = (getattr(user, "phone", "") or "").strip()
+    if name:
+        html = html.replace(_TEMPLATE_SENDER_NAME, html_mod.escape(name))
+    if email:
+        html = html.replace(_TEMPLATE_SENDER_EMAIL, html_mod.escape(email))
+    if phone:
+        html = html.replace(_TEMPLATE_SENDER_PHONE, html_mod.escape(phone))
+    else:
+        # Geen nummer ingevuld: de telefoonregel helemaal weglaten
+        html = html.replace("<br />" + _TEMPLATE_SENDER_PHONE, "").replace(_TEMPLATE_SENDER_PHONE, "")
+    return html
+
+
 def generate_cold_email(business: dict) -> str:
     name = business["name"]
     niche = business.get("niche", "").lower()
@@ -2257,7 +2296,22 @@ def get_lead_email(lead_id):
         if needs_regen:
             html = generate_cold_email(lead)
             save_email(lead_id, html)
-    return jsonify({"html": html})
+    return jsonify({"html": _personalize_email(html, current_user)})
+
+
+@app.route("/api/profile", methods=["GET", "POST"])
+@login_required
+def profile():
+    """Eigen gegevens van de ingelogde gebruiker; het telefoonnummer is aanpasbaar
+    en komt (net als naam en e-mail) automatisch in de handtekening van elke mail."""
+    phone = getattr(current_user, "phone", "") or ""
+    if request.method == "POST":
+        data = request.json or {}
+        phone = (data.get("phone") or "").strip()[:30]
+        user = db.session.get(User, current_user.id)
+        user.phone = phone
+        db.session.commit()
+    return jsonify({"name": current_user.name, "email": current_user.email, "phone": phone})
 
 
 @app.route("/api/leads/<lead_id>", methods=["DELETE"])
