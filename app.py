@@ -1569,9 +1569,12 @@ def _best_dish_name(snippets: list, keywords: list, fallback: str) -> str:
             continue
         # Onzichtbare tekens (BOM, zero-width space, harde spatie) uit webteksten weg
         name = re.sub("[\ufeff\u200b\u200c\u200d\u2060]", "", s).replace("\xa0", " ")
-        name = _PRICE_RE.sub("", name).strip(" -–—.,:;|*")
+        name = _PRICE_RE.sub("", name).strip(" -–—.,:;|*+€")
         name = re.sub(r"\s+", " ", name)
         if not (1 <= len(name.split()) <= 6) or len(name) > 45:
+            continue
+        # Komma's wijzen op een ingrediëntenlijst ("Tomatensaus, mozzarella, ui"), geen gerechtnaam
+        if "," in name:
             continue
         candidates.append(name)
     if not candidates:
@@ -1582,11 +1585,12 @@ def _best_dish_name(snippets: list, keywords: list, fallback: str) -> str:
     return best[:1].upper() + best[1:]
 
 
-def find_menu_pairing(website: str) -> tuple | None:
-    """Zoek op de website (en menupagina's) het meest genoemde gerecht en koppel
-    er een Heineken-speciaalbier aan. Geeft (gerechtnaam, bier, uitleg) of None."""
+def find_menu_pairings(website: str, max_pairings: int = 2) -> list:
+    """Zoek op de website (en menupagina's) de meest genoemde gerechten en koppel
+    er Heineken-speciaalbieren aan. Geeft max `max_pairings` tuples
+    (gerechtnaam, bier, uitleg), met waar mogelijk verschillende bieren."""
     if not website:
-        return None
+        return []
     url = website if website.startswith("http") else f"https://{website}"
     texts = []
     home_snippets = []
@@ -1605,7 +1609,7 @@ def find_menu_pairing(website: str) -> tuple | None:
                     if full not in menu_pages and not full.lower().endswith(".pdf"):
                         menu_pages.append(full)
     except Exception:
-        return None
+        return []
     # Max 2 menupagina's ophalen: elke fetch kost tijd binnen het jobbudget
     for page_url in menu_pages[:2]:
         try:
@@ -1619,19 +1623,37 @@ def find_menu_pairing(website: str) -> tuple | None:
 
     full_text = " ".join(texts).lower()
     if not full_text.strip():
-        return None
-    best = None
-    best_hits = 0
+        return []
+    scored = []
     for dish, keywords, beer, why in _BEER_PAIRINGS:
         hits = sum(len(re.findall(rf"\b{re.escape(kw)}", full_text)) for kw in keywords)
-        if hits > best_hits:
-            best, best_hits = (dish, keywords, beer, why), hits
-    if not best:
-        return None
-    dish, keywords, beer, why = best
+        if hits > 0:
+            scored.append((hits, dish, keywords, beer, why))
+    # Meeste vermeldingen eerst; sort is stabiel dus bij gelijke score wint de tabelvolgorde
+    scored.sort(key=lambda x: -x[0])
+
     # Menupagina's eerst: daar staan de echte gerechtnamen, de homepage is vangnet
-    dish_name = _best_dish_name(menu_snippets + home_snippets, keywords, dish)
-    return dish_name, beer, why
+    snippets = menu_snippets + home_snippets
+    pairings = []
+    used_categories = set()
+    used_names = set()
+    # Twee rondes: eerst alleen verschillende bieren, daarna eventueel aanvullen
+    # met een tweede gerecht bij hetzelfde bier (beter twee gerechten dan één)
+    for unique_beers_only in (True, False):
+        used_beers = {beer for _, beer, _ in pairings}
+        for hits, dish, keywords, beer, why in scored:
+            if len(pairings) >= max_pairings:
+                return pairings
+            if dish in used_categories or (unique_beers_only and beer in used_beers):
+                continue
+            name = _best_dish_name(snippets, keywords, dish)
+            if name.lower() in used_names:
+                continue
+            pairings.append((name, beer, why))
+            used_categories.add(dish)
+            used_names.add(name.lower())
+            used_beers.add(beer)
+    return pairings
 
 
 # Letterlijke blokken uit het eten-sjabloon (static/email-templates/eten.html)
@@ -1644,22 +1666,26 @@ _PAIRING_SECTION = (
 
 
 def _fill_menu_pairing(raw_html: str, website: str) -> str:
-    """Vul het bier-spijsblok van de eetmail met een gerecht van de menukaart.
+    """Vul het bier-spijsblok van de eetmail met (max twee) gerechten van de menukaart.
 
-    Geen gerecht gevonden → hele blok verwijderen, zodat er nooit een lege
-    sjabloontekst als "[Gerecht 1]" in een verstuurde mail staat."""
+    Eén gerecht gevonden → tweede blok weg. Niets gevonden → hele sectie weg,
+    zodat er nooit een lege sjabloontekst als "[Gerecht 1]" in een mail staat."""
     try:
-        pairing = find_menu_pairing(website)
+        pairings = find_menu_pairings(website)
     except Exception:
         log.exception("Menukoppeling mislukt voor %s", website)
-        pairing = None
-    if not pairing:
+        pairings = []
+    if not pairings:
         return raw_html.replace(_PAIRING_SECTION, "")
     import html as html_mod
-    dish, beer, why = pairing
-    raw_html = raw_html.replace(_PAIRING_BLOCK_2, "")
-    raw_html = raw_html.replace("[Gerecht 1]", html_mod.escape(dish)).replace("[Speciaalbier 1]", beer)
-    return raw_html.replace("Korte toelichting.", why, 1)
+    if len(pairings) < 2:
+        raw_html = raw_html.replace(_PAIRING_BLOCK_2, "")
+    for nr, (dish, beer, why) in enumerate(pairings[:2], start=1):
+        raw_html = raw_html.replace(f"[Gerecht {nr}]", html_mod.escape(dish))
+        raw_html = raw_html.replace(f"[Speciaalbier {nr}]", beer)
+        # 1e vervanging raakt blok 1, de volgende blok 2
+        raw_html = raw_html.replace("Korte toelichting.", why, 1)
+    return raw_html
 
 
 def generate_cold_email(business: dict) -> str:
