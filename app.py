@@ -1665,6 +1665,23 @@ _PAIRING_SECTION = (
 )
 
 
+def _styled_pairing_section(two_blocks: bool) -> str:
+    """Het bierblok mét de opmaak uit het Word-format: groene kop en lichtgroen
+    kader met donkergroene rand (kleuren #2F6B2F/#F6FAF5 komen uit het docx;
+    mammoth laat die vallen bij het omzetten, dus hier hersteld)."""
+    blocks = ('<p style="margin:6px 0 2px"><strong>[Gerecht 1] - [Speciaalbier 1]</strong></p>'
+              '<p style="margin:2px 0 10px">Korte toelichting.</p>')
+    if two_blocks:
+        blocks += ('<p style="margin:6px 0 2px"><strong>[Gerecht 2] - [Speciaalbier 2]</strong></p>'
+                   '<p style="margin:2px 0 10px">Korte toelichting.</p>')
+    return (
+        '<p><strong style="color:#2F6B2F">Welke bieren passen goed bij jullie gerechten</strong></p>'
+        '<table style="width:100%;border-collapse:collapse"><tr>'
+        '<td style="background-color:#F6FAF5;border:2px solid #2F6B2F;padding:10px 14px">'
+        + blocks + "</td></tr></table>"
+    )
+
+
 def _fill_menu_pairing(raw_html: str, website: str) -> str:
     """Vul het bier-spijsblok van de eetmail met (max twee) gerechten van de menukaart.
 
@@ -1678,8 +1695,7 @@ def _fill_menu_pairing(raw_html: str, website: str) -> str:
     if not pairings:
         return raw_html.replace(_PAIRING_SECTION, "")
     import html as html_mod
-    if len(pairings) < 2:
-        raw_html = raw_html.replace(_PAIRING_BLOCK_2, "")
+    raw_html = raw_html.replace(_PAIRING_SECTION, _styled_pairing_section(len(pairings) >= 2))
     for nr, (dish, beer, why) in enumerate(pairings[:2], start=1):
         raw_html = raw_html.replace(f"[Gerecht {nr}]", html_mod.escape(dish))
         raw_html = raw_html.replace(f"[Speciaalbier {nr}]", beer)
