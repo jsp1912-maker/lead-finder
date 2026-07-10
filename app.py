@@ -1517,8 +1517,8 @@ _BEER_PAIRINGS = [
      "De zachte, licht moutige smaak van Birra Moretti sluit van nature aan bij Italiaanse gerechten."),
     ("Spareribs", ["spareribs", "sparerib", "ribs", "pulled pork", "bbq", "barbecue"], "Texels Skuumkoppe",
      "Het donkere tarwebier Texels Skuumkoppe heeft karamelzoete tonen die de rooksmaak van gegrild vlees versterken."),
-    ("Burgers", ["burger", "hamburger", "cheeseburger"], "Lagunitas IPA",
-     "De frisse hopbitterheid van Lagunitas IPA snijdt mooi door de volle smaak van een burger heen."),
+    ("Burgers", ["burger", "hamburger", "cheeseburger"], "Texels Skuumkoppe",
+     "Het donkere tarwebier Texels Skuumkoppe heeft karamelzoete tonen die de gegrilde smaak van een burger versterken."),
     ("Steak", ["steak", "biefstuk", "entrecote", "tournedos", "ribeye", "bavette"], "Affligem Dubbel",
      "De rijke karameltonen van Affligem Dubbel geven gegrild rundvlees extra diepgang."),
     ("Saté", ["saté", "satay"], "Oedipus Mannenliefde",
@@ -1531,8 +1531,6 @@ _BEER_PAIRINGS = [
      "Affligem Dubbel heeft dezelfde donkere, zoete diepte als een goed stoofgerecht — ze versterken elkaar."),
     ("Kaasplank", ["kaasplank", "kaasfondue", "borrelplank"], "Affligem Tripel",
      "De kruidige volheid van Affligem Tripel is een klassieke combinatie met gerijpte kazen."),
-    ("Desserts", ["dessert", "chocolade", "appeltaart", "tiramisu", "cheesecake"], "Mort Subite Kriek",
-     "Het friszoete kersenbier Mort Subite Kriek komt naast een dessert perfect tot zijn recht."),
 ]
 
 _MENU_LINK_WORDS = ["menu", "menukaart", "kaart", "lunch", "diner", "dinerkaart", "gerechten"]
