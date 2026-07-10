@@ -1935,6 +1935,18 @@ def debug_info():
         info["node_processen"] = sum(1 for n in proc_names if n.lower().startswith("node"))
     except Exception:
         pass
+    try:
+        info["accounts"] = [
+            {
+                "naam": u.name,
+                "email": u.email,
+                "aangemaakt": u.created_at.strftime("%Y-%m-%d") if u.created_at else None,
+                "aantal_leads": db.session.query(Lead.id).filter_by(user_id=u.id).count(),
+            }
+            for u in User.query.order_by(User.created_at).all()
+        ]
+    except Exception as e:
+        info["accounts_fout"] = str(e)
     info["log"] = list(_log_buffer)
     return jsonify(info)
 
