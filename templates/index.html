@@ -1561,6 +1561,18 @@ function openEmailMenu(e, id) {
     btn.onclick = () => { copyText(m); menu.remove(); };
     menu.appendChild(btn);
   });
+  // Alles-kopiëren onderaan: alle adressen (incl. hoofdadres) met puntkomma's,
+  // klaar om in het Aan-veld van Outlook te plakken
+  const alle = [l.email, ...extraMails(l)].filter(Boolean);
+  const allesBtn = document.createElement('button');
+  allesBtn.textContent = `📋 Alles kopiëren (${alle.length})`;
+  allesBtn.style.cssText = 'border-top:1px solid var(--border2,#e2e8f0);margin-top:4px;padding-top:8px;font-weight:600;color:#005826';
+  allesBtn.onclick = () => {
+    navigator.clipboard.writeText(alle.join('; '));
+    toast(`${alle.length} adressen gekopieerd — plak ze in het Aan-veld`);
+    menu.remove();
+  };
+  menu.appendChild(allesBtn);
   document.body.appendChild(menu);
   setTimeout(() => document.addEventListener('click', () => menu.remove(), {once:true}), 0);
 }
