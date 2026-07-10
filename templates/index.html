@@ -1522,33 +1522,47 @@ function copyText(t) {
   toast('Gekopieerd: ' + t);
 }
 
-// E-mailregel op de kaart: hoofdadres + (alleen als die er zijn) een discreet
-// uitklapregeltje met de overige adressen en kopieerknopjes
-function emailRowHTML(l) {
-  const main = l.email ? `<span class="found">${esc(l.email)}</span>` : `<span class="unfound">Niet gevonden</span>`;
-  const extra = (l.emails || []).filter(e => e && e.toLowerCase() !== (l.email || '').toLowerCase());
-  if (!extra.length) return main;
-  const boxId = `extra-mails-${l.id}`;
-  const lblId = `extra-lbl-${l.id}`;
-  const meer = extra.length === 1 ? 'nog 1 ander adres' : `nog ${extra.length} andere adressen`;
-  const items = extra.map(e => `
-    <div style="display:flex;align-items:center;gap:6px;margin-top:3px">
-      <span class="found" style="word-break:break-all;font-size:0.78rem">${esc(e)}</span>
-      <button class="btn-sm" style="padding:1px 7px;font-size:0.68rem;flex-shrink:0" onclick="copyText('${esc(e)}')">Kopieer</button>
-    </div>`).join('');
-  return `${main}
-    <a href="#" id="${lblId}" style="display:block;font-size:0.74rem;color:#64748b;margin-top:2px;text-decoration:none"
-       onclick="event.preventDefault();toggleExtraMails('${l.id}', ${extra.length})">${meer} ▾</a>
-    <div id="${boxId}" style="display:none">${items}</div>`;
+// E-mailregel op de kaart: hoofdadres + klein "+3"-knopje dat een zwevend
+// menuutje opent met de overige adressen (klikken = kopiëren). De kaart
+// zelf groeit dus nooit, hoeveel adressen er ook gevonden zijn.
+function extraMails(l) {
+  return (l.emails || []).filter(e => e && e.toLowerCase() !== (l.email || '').toLowerCase());
 }
 
-function toggleExtraMails(id, count) {
-  const box = document.getElementById(`extra-mails-${id}`);
-  const lbl = document.getElementById(`extra-lbl-${id}`);
-  const open = box.style.display !== 'none';
-  box.style.display = open ? 'none' : 'block';
-  const meer = count === 1 ? 'nog 1 ander adres' : `nog ${count} andere adressen`;
-  lbl.textContent = open ? `${meer} ▾` : 'verberg andere adressen ▴';
+function emailRowHTML(l) {
+  const main = l.email ? `<span class="found">${esc(l.email)}</span>` : `<span class="unfound">Niet gevonden</span>`;
+  const extra = extraMails(l);
+  if (!extra.length) return main;
+  return `<span style="display:inline-flex;align-items:center;gap:6px;max-width:100%">${main}
+    <button title="Nog ${extra.length} adressen — klik om te bekijken en te kopiëren"
+      style="flex-shrink:0;border:1px solid var(--border);background:var(--surface2,#f1f5f9);color:#475569;border-radius:10px;padding:0 7px;font-size:0.7rem;line-height:1.5;cursor:pointer;font-family:inherit"
+      onclick="openEmailMenu(event, '${l.id}')">+${extra.length}</button></span>`;
+}
+
+function openEmailMenu(e, id) {
+  e.stopPropagation();
+  document.querySelectorAll('.status-menu').forEach(m => m.remove());
+  const l = allLeads.find(x => x.id === id);
+  if (!l) return;
+  const menu = document.createElement('div');
+  menu.className = 'status-menu';
+  menu.style.cssText = 'position:fixed;z-index:9999;max-height:280px;overflow-y:auto;min-width:230px';
+  const rect = e.target.getBoundingClientRect();
+  menu.style.top = Math.min(rect.bottom + 4, window.innerHeight - 300) + 'px';
+  menu.style.left = Math.min(rect.left, window.innerWidth - 250) + 'px';
+  const kop = document.createElement('div');
+  kop.textContent = 'Klik op een adres om te kopiëren';
+  kop.style.cssText = 'font-size:0.68rem;color:#94a3b8;padding:5px 10px 3px';
+  menu.appendChild(kop);
+  extraMails(l).forEach(m => {
+    const btn = document.createElement('button');
+    btn.textContent = m;
+    btn.style.wordBreak = 'break-all';
+    btn.onclick = () => { copyText(m); menu.remove(); };
+    menu.appendChild(btn);
+  });
+  document.body.appendChild(menu);
+  setTimeout(() => document.addEventListener('click', () => menu.remove(), {once:true}), 0);
 }
 
 async function openProfile() {
