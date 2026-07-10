@@ -134,10 +134,11 @@ jobs = {}
 _leads_lock = threading.Lock()
 _job_executor = ThreadPoolExecutor(max_workers=4)
 
-# Max 1 browser tegelijk op de héle server: het geheugen is 1GB en elke
-# Chromium kost ~400MB — twee tegelijk opstarten duwt de server al over de limiet
-# (getest 2026-07-02: bij 2 gelijktijdige launches piekt het geheugen naar 920MB+ en bevriest alles)
-_BROWSER_SLOTS_TOTAL = 1
+# Max 3 browsers tegelijk op de héle server. Elke Chromium kost ~400MB.
+# Historie: t/m 2026-07-09 stond dit op 1 omdat het Railway-trialplan maar 1GB
+# geheugen gaf (2 gelijktijdige launches → 920MB+ en alles bevroor). Op 2026-07-10
+# is geüpgraded naar het Hobby-plan (geheugengrens 48GB), dus 3 kan nu veilig.
+_BROWSER_SLOTS_TOTAL = 3
 _browser_slots = threading.Semaphore(_BROWSER_SLOTS_TOTAL)
 _slot_holders: dict = {}  # thread-id -> (omschrijving, starttijd)
 _slot_lock = threading.Lock()
@@ -157,6 +158,28 @@ def _release_browser_slot():
     with _slot_lock:
         _slot_holders.pop(threading.get_ident(), None)
     _browser_slots.release()
+
+
+def _wait_until_slot_free(job_id: str, max_wait_s: int = 600):
+    """Als alle browser-slots bezet zijn: eerlijk melden dat het druk is en wachten.
+
+    Voorkomt dat een gebruiker na de slot-timeout stilletjes "Geen leads gevonden"
+    te zien krijgt terwijl de server gewoon bezig was voor iemand anders."""
+    deadline = time.time() + max_wait_s
+    logged = False
+    while time.time() < deadline:
+        with _slot_lock:
+            slot_free = len(_slot_holders) < _BROWSER_SLOTS_TOTAL
+        if slot_free:
+            return
+        job = jobs.get(job_id)
+        if job is None or job.get("status") != "running":
+            return
+        if not logged:
+            log.info("Job %s wacht: alle browser-slots bezet", job_id)
+            logged = True
+        job["message"] = "Druk op de server: een andere zoekopdracht draait nu — de jouwe start automatisch zodra die klaar is..."
+        time.sleep(5)
 
 
 def _is_zombie(pid: str) -> bool:
@@ -1663,6 +1686,8 @@ def scrape_lead_details(b: dict, is_sport: bool = False):
 def run_search_job(job_id: str, niche: str, city: str, max_results: int, force_type: str = None, radius: int = 0, user_id: int = None):
     jobs[job_id] = {"status": "running", "progress": 0, "message": "Google Maps doorzoeken..."}
     log.info("Zoekjob %s gestart: niche=%r stad=%r max=%d", job_id, niche, city, max_results)
+    _wait_until_slot_free(job_id)
+    # Wachttijd op andere gebruikers telt niet mee voor het tijdsbudget van de job
     start_time = time.time()
     # Ruim genoeg voor serieel browserwerk (1 browser tegelijk op de server)
     MAX_JOB_SECONDS = 300
@@ -1789,6 +1814,7 @@ def run_search_job(job_id: str, niche: str, city: str, max_results: int, force_t
 
 def run_events_job(job_id: str, city: str, max_results: int):
     jobs[job_id] = {"status": "running", "progress": 0, "message": f"Evenementen zoeken in {city}..."}
+    _wait_until_slot_free(job_id)
     try:
         events = scrape_events(city, max_results)
         all_events = load_events()
@@ -2048,6 +2074,7 @@ def delete_lead(lead_id):
 def rescrape_lead(lead_id):
     job_id = str(uuid.uuid4())
     jobs[job_id] = {"status": "running", "progress": 0, "message": "Opnieuw scrapen..."}
+    _wait_until_slot_free(job_id)
 
     uid = current_user.id
 
@@ -2272,6 +2299,7 @@ def _extract_city_from_name(name: str) -> str:
 def run_manual_lead_job(job_id: str, name: str, force_type: str, user_id: int = None):
     """Zoek een club via Google Maps of DuckDuckGo. Voegt ALTIJD toe, ook zonder website."""
     jobs[job_id] = {"status": "running", "progress": 5, "message": f"Zoeken naar {name}...", "count": 0}
+    _wait_until_slot_free(job_id)
     try:
         # Duplicate check — sla over als de lead al goede info heeft
         leads = load_leads(user_id)
