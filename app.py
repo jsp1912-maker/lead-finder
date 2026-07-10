@@ -1537,20 +1537,65 @@ _BEER_PAIRINGS = [
 
 _MENU_LINK_WORDS = ["menu", "menukaart", "kaart", "lunch", "diner", "dinerkaart", "gerechten"]
 
+_PRICE_RE = re.compile(r"€?\s*\d+[.,]\d{2}|€\s*\d+|\d+[.,]-")
+# Korte teksten met deze woorden zijn navigatie of marketing, geen gerechtnaam
+_NOT_DISH_WORDS = ["menu", "kaart", "bestel", "reserveer", "contact", "home", "over ons",
+                   "openingstijd", "cookie", "privacy", "bezorg", "afhalen", "onze", "nieuws",
+                   "vacature", "cadeau", "arrangement", "volg ons", "lees meer"]
+
+
+def _extract_menu_snippets(soup) -> list:
+    """Korte tekstjes van een pagina die een gerechtnaam kunnen zijn (koppen,
+    lijstitems, vetgedrukte regels — zo staan gerechten meestal op een menukaart)."""
+    snippets = []
+    for tag in soup.find_all(["h1", "h2", "h3", "h4", "h5", "strong", "b", "li", "td", "dt"]):
+        t = tag.get_text(" ", strip=True)
+        if 3 <= len(t) <= 60:
+            snippets.append(t)
+    return snippets
+
+
+def _best_dish_name(snippets: list, keywords: list, fallback: str) -> str:
+    """Kies de echte gerechtnaam van de menukaart ("Pizza Margherita") in plaats
+    van de algemene categorie. Lukt dat niet, dan de categorienaam als vangnet."""
+    candidates = []
+    for s in snippets:
+        low = s.lower()
+        if any(w in low for w in _NOT_DISH_WORDS):
+            continue
+        if not any(re.search(rf"\b{re.escape(kw)}", low) for kw in keywords):
+            continue
+        # Onzichtbare tekens (BOM, zero-width space, harde spatie) uit webteksten weg
+        name = re.sub("[\ufeff\u200b\u200c\u200d\u2060]", "", s).replace("\xa0", " ")
+        name = _PRICE_RE.sub("", name).strip(" -–—.,:;|*")
+        name = re.sub(r"\s+", " ", name)
+        if not (1 <= len(name.split()) <= 6) or len(name) > 45:
+            continue
+        candidates.append(name)
+    if not candidates:
+        return fallback
+    # Voorkeur voor echte namen van meerdere woorden ("Pizza Margherita")
+    multi_word = [c for c in candidates if len(c.split()) >= 2]
+    best = (multi_word or candidates)[0]
+    return best[:1].upper() + best[1:]
+
 
 def find_menu_pairing(website: str) -> tuple | None:
     """Zoek op de website (en menupagina's) het meest genoemde gerecht en koppel
-    er een Heineken-speciaalbier aan. Geeft (gerecht, bier, uitleg) of None."""
+    er een Heineken-speciaalbier aan. Geeft (gerechtnaam, bier, uitleg) of None."""
     if not website:
         return None
     url = website if website.startswith("http") else f"https://{website}"
     texts = []
+    home_snippets = []
+    menu_snippets = []
     menu_pages = []
     try:
         r = requests.get(url, timeout=6, headers={"User-Agent": "Mozilla/5.0"}, allow_redirects=True)
         if r.status_code < 400:
             soup = BeautifulSoup(r.text, "html.parser")
             texts.append(soup.get_text(" ", strip=True))
+            home_snippets = _extract_menu_snippets(soup)
             for a in soup.find_all("a", href=True):
                 label = f"{a.get_text()} {a['href']}".lower()
                 if any(w in label for w in _MENU_LINK_WORDS):
@@ -1564,7 +1609,9 @@ def find_menu_pairing(website: str) -> tuple | None:
         try:
             r = requests.get(page_url, timeout=6, headers={"User-Agent": "Mozilla/5.0"}, allow_redirects=True)
             if r.status_code < 400 and "text/html" in r.headers.get("content-type", ""):
-                texts.append(BeautifulSoup(r.text, "html.parser").get_text(" ", strip=True))
+                soup = BeautifulSoup(r.text, "html.parser")
+                texts.append(soup.get_text(" ", strip=True))
+                menu_snippets.extend(_extract_menu_snippets(soup))
         except Exception:
             continue
 
@@ -1576,8 +1623,13 @@ def find_menu_pairing(website: str) -> tuple | None:
     for dish, keywords, beer, why in _BEER_PAIRINGS:
         hits = sum(len(re.findall(rf"\b{re.escape(kw)}", full_text)) for kw in keywords)
         if hits > best_hits:
-            best, best_hits = (dish, beer, why), hits
-    return best
+            best, best_hits = (dish, keywords, beer, why), hits
+    if not best:
+        return None
+    dish, keywords, beer, why = best
+    # Menupagina's eerst: daar staan de echte gerechtnamen, de homepage is vangnet
+    dish_name = _best_dish_name(menu_snippets + home_snippets, keywords, dish)
+    return dish_name, beer, why
 
 
 # Letterlijke blokken uit het eten-sjabloon (static/email-templates/eten.html)
@@ -1601,9 +1653,10 @@ def _fill_menu_pairing(raw_html: str, website: str) -> str:
         pairing = None
     if not pairing:
         return raw_html.replace(_PAIRING_SECTION, "")
+    import html as html_mod
     dish, beer, why = pairing
     raw_html = raw_html.replace(_PAIRING_BLOCK_2, "")
-    raw_html = raw_html.replace("[Gerecht 1]", dish).replace("[Speciaalbier 1]", beer)
+    raw_html = raw_html.replace("[Gerecht 1]", html_mod.escape(dish)).replace("[Speciaalbier 1]", beer)
     return raw_html.replace("Korte toelichting.", why, 1)
 
 
