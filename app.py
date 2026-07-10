@@ -1517,32 +1517,62 @@ def _apply_email_template(raw_html: str, name: str, logo_url: str, is_sport: boo
 
 # ── Menukaart → bier-spijscombinatie (eetgelegenheden) ───────────────────────
 
-# Volgorde = prioriteit bij gelijke score. Trefwoorden matchen ook samenstellingen
-# ("vis" matcht "visgerechten") maar niet middenin een woord ("advies" niet).
+# Volgorde = prioriteit bij gelijke score. Trefwoorden van 5+ letters matchen ook
+# samenstellingen ("pasta" matcht "pastasalade"); korte alleen als los woord
+# ("vis" niet in "visie") — zie _kw_pattern.
 _BEER_PAIRINGS = [
-    ("Pizza", ["pizza"], "Birra Moretti",
+    ("Pizza", ["pizza", "calzone"], "Birra Moretti",
      "Birra Moretti is dé Italiaanse klassieker: zacht mout en subtiele hop, precies wat een pizza uit de oven vraagt."),
-    ("Pasta", ["pasta", "spaghetti", "lasagne", "risotto", "gnocchi"], "Birra Moretti",
+    ("Pasta", ["pasta", "spaghetti", "lasagne", "risotto", "gnocchi", "tagliatelle", "penne", "ravioli",
+               "tortellini", "carbonara", "bolognese", "linguine", "carpaccio", "antipasti"], "Birra Moretti",
      "De zachte, licht moutige smaak van Birra Moretti sluit van nature aan bij Italiaanse gerechten."),
-    ("Spareribs", ["spareribs", "sparerib", "ribs", "pulled pork", "bbq", "barbecue"], "Texels Skuumkoppe",
+    ("Spareribs", ["spareribs", "sparerib", "ribs", "pulled pork", "bbq", "barbecue", "brisket"], "Texels Skuumkoppe",
      "Het donkere tarwebier Texels Skuumkoppe heeft karamelzoete tonen die de rooksmaak van gegrild vlees versterken."),
     ("Burgers", ["burger", "hamburger", "cheeseburger"], "Texels Skuumkoppe",
      "Het donkere tarwebier Texels Skuumkoppe heeft karamelzoete tonen die de gegrilde smaak van een burger versterken."),
-    ("Steak", ["steak", "biefstuk", "entrecote", "tournedos", "ribeye", "bavette"], "Affligem Dubbel",
+    ("Steak", ["steak", "biefstuk", "entrecote", "tournedos", "ribeye", "rib-eye", "bavette", "kogelbiefstuk",
+               "sukade", "picanha", "chateaubriand", "black angus", "diamanthaas", "ossenhaas", "runderhaas"], "Affligem Dubbel",
      "De rijke karameltonen van Affligem Dubbel geven gegrild rundvlees extra diepgang."),
-    ("Saté", ["saté", "satay"], "Oedipus Mannenliefde",
+    ("Saté", ["saté", "satay", "sateh"], "Oedipus Mannenliefde",
      "Oedipus Mannenliefde, gebrouwen met citroengras en Szechuanpeper, geeft een frisse tegenhanger aan de rijke pindasaus."),
-    ("Aziatische gerechten", ["curry", "thais", "thaise", "ramen", "noodles", "wok", "sushi", "poke", "dim sum"], "Oedipus Mannenliefde",
+    ("Aziatische gerechten", ["curry", "thais", "thaise", "ramen", "noodles", "wok", "sushi", "poke", "dim sum",
+                              "pad thai", "teriyaki", "gyoza", "bao", "loempia", "nasi", "bami", "rendang",
+                              "kimchi", "dumpling"], "Oedipus Mannenliefde",
      "Het kruidige, frisse Oedipus Mannenliefde is gebrouwen met citroengras en past daardoor verrassend goed bij Aziatische smaken."),
-    ("Visgerechten", ["zalm", "kabeljauw", "tonijn", "garnalen", "mosselen", "kibbeling", "vis", "zeebaars", "gamba"], "Affligem Blond",
+    ("Visgerechten", ["zalm", "kabeljauw", "tonijn", "garnalen", "mosselen", "kibbeling", "vis", "visgerecht",
+                      "zeebaars", "gamba", "forel", "makreel", "dorade", "zeewolf", "sliptong", "coquilles",
+                      "oesters", "calamares", "calamaris", "scampi", "octopus", "snoekbaars", "heilbot"], "Affligem Blond",
      "Het licht fruitige Affligem Blond begeleidt vis zonder de fijne smaak te overheersen."),
-    ("Stoofgerechten", ["stoofvlees", "stoofpot", "stoverij", "sudderlap"], "Affligem Dubbel",
+    ("Schnitzel", ["schnitzel"], "Texels Skuumkoppe",
+     "Het volle, licht karamelzoete Texels Skuumkoppe houdt moeiteloos stand naast een goudgebakken schnitzel."),
+    ("Stoofgerechten", ["stoofvlees", "stoofpot", "stoverij", "sudderlap", "goulash", "draadjesvlees"], "Affligem Dubbel",
      "Affligem Dubbel heeft dezelfde donkere, zoete diepte als een goed stoofgerecht — ze versterken elkaar."),
-    ("Kaasplank", ["kaasplank", "kaasfondue", "borrelplank"], "Affligem Tripel",
+    ("Lamsgerechten", ["lamsrack", "lamsstoof", "lamsschenkel", "lamskotelet", "lamsfilet"], "Affligem Dubbel",
+     "De volle, kruidige smaak van Affligem Dubbel komt prachtig samen met de rijke smaak van lamsvlees."),
+    ("Kipgerechten", ["kipfilet", "kippendijen", "gegrilde kip", "piri piri", "kipspies"], "Affligem Blond",
+     "Het frisse, licht fruitige Affligem Blond laat gegrilde kip mooi tot zijn recht komen."),
+    ("Kaasplank", ["kaasplank", "kaasfondue"], "Affligem Tripel",
      "De kruidige volheid van Affligem Tripel is een klassieke combinatie met gerijpte kazen."),
+    ("Salades", ["salade", "caesar"], "Affligem Blond",
+     "Het lichte, frisse Affligem Blond is een natuurlijke begeleider van een goed gevulde salade."),
+    ("Borrelhapjes", ["bitterballen", "borrelplank", "bittergarnituur", "nachos"], "Texels Skuumkoppe",
+     "Het karaktervolle Texels Skuumkoppe maakt van een borrelplank meteen een proeverij."),
 ]
 
+
+def _kw_pattern(kw: str) -> str:
+    """Korte trefwoorden alleen als los woord ("vis" niet in "visie"), langere
+    ook als begin van samenstellingen ("pasta" matcht "pastasalade")."""
+    esc = re.escape(kw)
+    return rf"\b{esc}\b" if len(kw) <= 4 else rf"\b{esc}"
+
 _MENU_LINK_WORDS = ["menu", "menukaart", "kaart", "lunch", "diner", "dinerkaart", "gerechten"]
+# Drank-, wijn- en bierkaarten bevatten geen gerechten: fetch-budget niet aan verspillen
+_MENU_LINK_SKIP = ["drank", "wijn", "bier", "whisky", "cocktail", "borrelkaart"]
+
+
+def _is_menu_link(label: str) -> bool:
+    return any(w in label for w in _MENU_LINK_WORDS) and not any(w in label for w in _MENU_LINK_SKIP)
 
 _PRICE_RE = re.compile(r"€?\s*\d+[.,]\d{2}|€\s*\d+|\d+[.,]-")
 # Korte teksten met deze woorden zijn navigatie of marketing, geen gerechtnaam
@@ -1556,14 +1586,28 @@ _NOT_DISH_WORDS = ["menu", "kaart", "bestel", "reserveer", "contact", "home", "o
 
 
 def _extract_menu_snippets(soup) -> list:
-    """Korte tekstjes van een pagina die een gerechtnaam kunnen zijn (koppen,
-    lijstitems, vetgedrukte regels — zo staan gerechten meestal op een menukaart)."""
+    """Korte tekstjes van een pagina die een gerechtnaam kunnen zijn. Ruim
+    opgezet (ook span/p/div): het trefwoordfilter in _best_dish_name haalt de
+    ruis er later uit."""
     snippets = []
-    for tag in soup.find_all(["h1", "h2", "h3", "h4", "h5", "strong", "b", "li", "td", "dt"]):
+    for tag in soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6", "strong", "b",
+                              "li", "td", "dt", "dd", "span", "p", "div", "a", "em"]):
         t = tag.get_text(" ", strip=True)
         if 3 <= len(t) <= 60:
             snippets.append(t)
     return snippets
+
+
+def _pdf_menu_texts(content: bytes) -> tuple:
+    """Tekst en gerechtnaam-kandidaten uit een PDF-menukaart (veel restaurants
+    zetten hun kaart als PDF online)."""
+    from io import BytesIO
+
+    from pypdf import PdfReader
+    reader = PdfReader(BytesIO(content))
+    text = "\n".join((page.extract_text() or "") for page in reader.pages[:8])
+    lines = [ln.strip() for ln in text.splitlines()]
+    return text, [ln for ln in lines if 3 <= len(ln) <= 60]
 
 
 def _best_dish_name(snippets: list, keywords: list, fallback: str) -> str:
@@ -1574,16 +1618,25 @@ def _best_dish_name(snippets: list, keywords: list, fallback: str) -> str:
         low = s.lower()
         if any(w in low for w in _NOT_DISH_WORDS):
             continue
-        if not any(re.search(rf"\b{re.escape(kw)}", low) for kw in keywords):
+        if not any(re.search(_kw_pattern(kw), low) for kw in keywords):
             continue
         # Onzichtbare tekens (BOM, zero-width space, harde spatie) uit webteksten weg
         name = re.sub("[\ufeff\u200b\u200c\u200d\u2060]", "", s).replace("\xa0", " ")
-        name = _PRICE_RE.sub("", name).strip(" -–—.,:;|*+€")
-        name = re.sub(r"\s+", " ", name)
+        # Toelichting tussen haakjes en (kale) prijzen horen niet in de gerechtnaam
+        name = re.sub(r"\([^)]*\)", " ", name)
+        # "Gerecht met garnering..." → alleen de gerechtnaam vóór "met"
+        name = re.split(r"\s+met\s+", name)[0]
+        name = _PRICE_RE.sub("", name)
+        name = re.sub(r"\s+\d{1,3}\s*$", "", name)
+        name = re.sub(r"\s+", " ", name).strip(" -–—.,:;|*+€")
         if not (1 <= len(name.split()) <= 6) or len(name) > 45:
             continue
         # Komma's wijzen op een ingrediëntenlijst ("Tomatensaus, mozzarella, ui"), geen gerechtnaam
         if "," in name:
+            continue
+        # Eindigt op een voegwoord/lidwoord? Dan is het een afgebroken regel (PDF-omloop)
+        if name.split()[-1].lower() in ("met", "een", "en", "van", "de", "het", "in", "op", "uit",
+                                        "of", "voor", "aan", "la", "al", "alla", "a", "à", "e", "di"):
             continue
         candidates.append(name)
     if not candidates:
@@ -1613,20 +1666,53 @@ def find_menu_pairings(website: str, max_pairings: int = 2) -> list:
             home_snippets = _extract_menu_snippets(soup)
             for a in soup.find_all("a", href=True):
                 label = f"{a.get_text()} {a['href']}".lower()
-                if any(w in label for w in _MENU_LINK_WORDS):
-                    full = urljoin(r.url, a["href"])
-                    if full not in menu_pages and not full.lower().endswith(".pdf"):
+                if _is_menu_link(label):
+                    full = urljoin(r.url, a["href"]).split("#")[0]
+                    if full and full not in menu_pages:
                         menu_pages.append(full)
     except Exception:
         return []
-    # Max 2 menupagina's ophalen: elke fetch kost tijd binnen het jobbudget
-    for page_url in menu_pages[:2]:
+    # Niets gelinkt? Probeer dan de gebruikelijke adressen van menupagina's
+    if not menu_pages:
+        base = url.rstrip("/")
+        menu_pages = [base + "/menu", base + "/menukaart", base + "/kaart"]
+    # Links waarvan het adres zelf 'menu' of 'kaart' zegt eerst
+    menu_pages.sort(key=lambda u: 0 if any(w in u.lower() for w in ("menu", "kaart")) else 1)
+    # De echte kaart staat vaak één klik dieper (of als PDF) op de menupagina,
+    # dus tijdens het aflopen worden nieuwe menu-links achteraan toegevoegd
+    fetched = 0
+    idx = 0
+    seen = set()
+    while idx < len(menu_pages) and fetched < 6:
+        page_url = menu_pages[idx]
+        idx += 1
+        if page_url in seen:
+            continue
+        seen.add(page_url)
         try:
-            r = requests.get(page_url, timeout=6, headers={"User-Agent": "Mozilla/5.0"}, allow_redirects=True)
-            if r.status_code < 400 and "text/html" in r.headers.get("content-type", ""):
+            r = requests.get(page_url, timeout=8, headers={"User-Agent": "Mozilla/5.0"}, allow_redirects=True)
+            if r.status_code >= 400:
+                continue
+            fetched += 1
+            ctype = r.headers.get("content-type", "")
+            if "pdf" in ctype or page_url.lower().endswith(".pdf"):
+                if len(r.content) <= 8_000_000:
+                    try:
+                        pdf_text, pdf_snips = _pdf_menu_texts(r.content)
+                        texts.append(pdf_text)
+                        menu_snippets.extend(pdf_snips)
+                    except Exception:
+                        pass
+            elif "text/html" in ctype:
                 soup = BeautifulSoup(r.text, "html.parser")
                 texts.append(soup.get_text(" ", strip=True))
                 menu_snippets.extend(_extract_menu_snippets(soup))
+                for a in soup.find_all("a", href=True):
+                    label = f"{a.get_text()} {a['href']}".lower()
+                    if _is_menu_link(label):
+                        full = urljoin(r.url, a["href"]).split("#")[0]
+                        if full and full not in menu_pages:
+                            menu_pages.append(full)
         except Exception:
             continue
 
@@ -1635,7 +1721,7 @@ def find_menu_pairings(website: str, max_pairings: int = 2) -> list:
         return []
     scored = []
     for dish, keywords, beer, why in _BEER_PAIRINGS:
-        hits = sum(len(re.findall(rf"\b{re.escape(kw)}", full_text)) for kw in keywords)
+        hits = sum(len(re.findall(_kw_pattern(kw), full_text)) for kw in keywords)
         if hits > 0:
             scored.append((hits, dish, keywords, beer, why))
     # Meeste vermeldingen eerst; sort is stabiel dus bij gelijke score wint de tabelvolgorde
