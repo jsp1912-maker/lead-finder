@@ -1315,7 +1315,7 @@ function businessCardHTML(l) {
     ? `<a href="${l.website}" target="_blank">${l.website.replace(/^https?:\/\//,'').split('?')[0].substring(0,40)}</a>`
     : `<span class="unfound">Geen website</span>`;
 
-  const email = l.email ? `<span class="found">${l.email}</span>` : `<span class="unfound">Niet gevonden</span>`;
+  const email = emailRowHTML(l);
   const phone = l.phone ? `<span>${l.phone}</span>` : `<span class="unfound">Niet gevonden</span>`;
   const contact = l.contact_person ? `<span class="found">${l.contact_person}</span>` : `<span class="unfound">Onbekend</span>`;
   const rating = l.rating ? ` ★${l.rating}` : '';
@@ -1365,7 +1365,7 @@ function sportCardHTML(l) {
     ? `<a href="${l.website}" target="_blank">${l.website.replace(/^https?:\/\//,'').split('?')[0].substring(0,40)}</a>`
     : `<span class="unfound">Geen website</span>`;
 
-  const email = l.email ? `<span class="found">${l.email}</span>` : `<span class="unfound">Niet gevonden</span>`;
+  const email = emailRowHTML(l);
   const phone = l.phone ? `<span>${l.phone}</span>` : `<span class="unfound">Niet gevonden</span>`;
   const contact = l.contact_person ? `<span class="found">${l.contact_person}</span>` : `<span class="unfound">Onbekend</span>`;
 
@@ -1516,6 +1516,40 @@ function showBoard(id) {
 }
 
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+function copyText(t) {
+  navigator.clipboard.writeText(t);
+  toast('Gekopieerd: ' + t);
+}
+
+// E-mailregel op de kaart: hoofdadres + (alleen als die er zijn) een discreet
+// uitklapregeltje met de overige adressen en kopieerknopjes
+function emailRowHTML(l) {
+  const main = l.email ? `<span class="found">${esc(l.email)}</span>` : `<span class="unfound">Niet gevonden</span>`;
+  const extra = (l.emails || []).filter(e => e && e.toLowerCase() !== (l.email || '').toLowerCase());
+  if (!extra.length) return main;
+  const boxId = `extra-mails-${l.id}`;
+  const lblId = `extra-lbl-${l.id}`;
+  const meer = extra.length === 1 ? 'nog 1 ander adres' : `nog ${extra.length} andere adressen`;
+  const items = extra.map(e => `
+    <div style="display:flex;align-items:center;gap:6px;margin-top:3px">
+      <span class="found" style="word-break:break-all;font-size:0.78rem">${esc(e)}</span>
+      <button class="btn-sm" style="padding:1px 7px;font-size:0.68rem;flex-shrink:0" onclick="copyText('${esc(e)}')">Kopieer</button>
+    </div>`).join('');
+  return `${main}
+    <a href="#" id="${lblId}" style="display:block;font-size:0.74rem;color:#64748b;margin-top:2px;text-decoration:none"
+       onclick="event.preventDefault();toggleExtraMails('${l.id}', ${extra.length})">${meer} ▾</a>
+    <div id="${boxId}" style="display:none">${items}</div>`;
+}
+
+function toggleExtraMails(id, count) {
+  const box = document.getElementById(`extra-mails-${id}`);
+  const lbl = document.getElementById(`extra-lbl-${id}`);
+  const open = box.style.display !== 'none';
+  box.style.display = open ? 'none' : 'block';
+  const meer = count === 1 ? 'nog 1 ander adres' : `nog ${count} andere adressen`;
+  lbl.textContent = open ? `${meer} ▾` : 'verberg andere adressen ▴';
+}
 
 async function openProfile() {
   const r = await fetch('/api/profile');

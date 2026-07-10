@@ -1112,6 +1112,14 @@ def find_email_and_contact(website: str) -> tuple:
         re.compile(r"(?:Mijn naam is|I am|I'm)\s+([A-Z][a-z]+(?:\s[A-Z][a-z]+)?)", re.IGNORECASE),
     ]
     email, contact = "", ""
+    # Alle gevonden adressen (in paginavolgorde, ontdubbeld) — de kaart toont ze uitklapbaar
+    all_emails: list = []
+
+    def _collect_emails(candidates):
+        for e in candidates:
+            e = e.strip().strip(".")
+            if e and e.lower() not in (x.lower() for x in all_emails):
+                all_emails.append(e)
 
     # First load the homepage to discover additional contact links
     try:
@@ -1137,13 +1145,15 @@ def find_email_and_contact(website: str) -> tuple:
             if r.status_code >= 400:
                 continue
             soup_email = BeautifulSoup(r.text, "html.parser")
-            found_emails = set(e for e in email_pattern.findall(r.text) if not any(j in e.lower() for j in junk))
+            page_emails = [e for e in email_pattern.findall(r.text) if not any(j in e.lower() for j in junk)]
             for a in soup_email.find_all("a", href=True):
                 href = a["href"]
                 if href.startswith("mailto:"):
                     candidate = href[7:].split("?")[0].strip()
                     if candidate and "@" in candidate and not any(j in candidate.lower() for j in junk):
-                        found_emails.add(candidate)
+                        page_emails.append(candidate)
+            found_emails = set(page_emails)
+            _collect_emails(page_emails)
             if found_emails and not email:
                 email = next(iter(found_emails))
             if not contact:
@@ -1182,12 +1192,14 @@ def find_email_and_contact(website: str) -> tuple:
                             pw_page.goto(page_url, wait_until="domcontentloaded", timeout=15000)
                             pw_page.wait_for_timeout(1000)
                             html = pw_page.content()
-                            found_emails = set(e for e in email_pattern.findall(html) if not any(j in e.lower() for j in junk))
+                            pw_emails = [e for e in email_pattern.findall(html) if not any(j in e.lower() for j in junk)]
                             # Ook mailto links ophalen via Playwright
                             for href in pw_page.eval_on_selector_all("a[href^='mailto:']", "els => els.map(e => e.href)"):
                                 candidate = href.replace("mailto:", "").split("?")[0].strip()
                                 if candidate and "@" in candidate and not any(j in candidate.lower() for j in junk):
-                                    found_emails.add(candidate)
+                                    pw_emails.append(candidate)
+                            found_emails = set(pw_emails)
+                            _collect_emails(pw_emails)
                             if found_emails:
                                 email = next(iter(found_emails))
                         except Exception:
@@ -1202,7 +1214,8 @@ def find_email_and_contact(website: str) -> tuple:
         finally:
             _release_browser_slot()
 
-    return email, contact
+    # Max 10 adressen: meer is ruis (en de kaart moet leesbaar blijven)
+    return email, contact, all_emails[:10]
 
 
 # ── Board scraper for sports clubs ───────────────────────────────────────────
@@ -1995,7 +2008,7 @@ def scrape_lead_details(b: dict, is_sport: bool = False):
     website = b.get("website", "")
     b["website_status"] = check_website(website)
     b["screenshot"] = take_screenshot(website, b["id"])
-    b["email"], b["contact_person"] = find_email_and_contact(website)
+    b["email"], b["contact_person"], b["emails"] = find_email_and_contact(website)
     b["logo_url"] = find_logo(website)
     if not b.get("phone"):
         b["phone"] = find_phone_from_website(website)
@@ -2475,11 +2488,13 @@ def rescrape_lead(lead_id):
             jobs[job_id]["progress"] = 50
             jobs[job_id]["message"] = "Email zoeken..."
             if website:
-                email, contact = find_email_and_contact(website)
+                email, contact, all_emails = find_email_and_contact(website)
                 if email:
                     lead["email"] = email
                 if contact:
                     lead["contact_person"] = contact
+                if all_emails:
+                    lead["emails"] = all_emails
 
             jobs[job_id]["progress"] = 70
             jobs[job_id]["message"] = "Telefoon en adres zoeken..."
@@ -2652,6 +2667,7 @@ def run_manual_lead_job(job_id: str, name: str, force_type: str, user_id: int = 
         result_name = name
         website, phone, address, city = "", "", "", extracted_city
         email, contact, logo_url, board_page = "", "", "", ""
+        all_emails: list = []
         method = "handmatig"
 
         # Google Maps zoeken — meerdere queries proberen
@@ -2710,7 +2726,7 @@ def run_manual_lead_job(job_id: str, name: str, force_type: str, user_id: int = 
         if website:
             try:
                 jobs[job_id].update({"progress": 55, "message": "Email zoeken op website..."})
-                email, contact = find_email_and_contact(website)
+                email, contact, all_emails = find_email_and_contact(website)
             except Exception:
                 pass
             try:
@@ -2735,6 +2751,7 @@ def run_manual_lead_job(job_id: str, name: str, force_type: str, user_id: int = 
             "phone": phone,
             "website": website,
             "email": email,
+            "emails": all_emails,
             "contact_person": contact,
             "logo_url": logo_url,
             "board_page": board_page,
