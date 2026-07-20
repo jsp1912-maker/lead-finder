@@ -1340,121 +1340,128 @@ def find_board_page(website: str) -> str:
 
 # ── Events scraper ────────────────────────────────────────────────────────────
 
-def scrape_events(city: str, max_results: int) -> list:
-    events = []
-    seen = set()
+_MAANDEN_NL = ["", "jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"]
 
-    sources = [
-        f"https://www.eventbrite.nl/d/netherlands--{city.lower()}/events/",
-        f"https://www.google.com/search?q=evenementen+{city}+2025+2026",
-        f"https://www.uitagenda.nl/agenda/{city.lower()}",
-    ]
 
+def _format_event_date(start: str, end: str) -> str:
+    """"2026-08-21" + "2026-08-23" -> "21 t/m 23 aug 2026" (of één datum)."""
+    try:
+        sd = datetime.fromisoformat(start[:10])
+        txt = f"{sd.day} {_MAANDEN_NL[sd.month]} {sd.year}"
+        if end and end[:10] != start[:10]:
+            ed = datetime.fromisoformat(end[:10])
+            txt = f"{sd.day} t/m {ed.day} {_MAANDEN_NL[ed.month]} {ed.year}" if (sd.month, sd.year) == (ed.month, ed.year) \
+                else f"{txt} t/m {ed.day} {_MAANDEN_NL[ed.month]} {ed.year}"
+        return txt
+    except Exception:
+        return start or ""
+
+
+def scrape_events(city: str, max_results: int, event_type: str = "") -> list:
+    events: list = []
     if not _acquire_browser_slot(f"events:{city}"):
         return events
     try:
-        return _scrape_events_inner(city, max_results, events, seen, sources)
+        return _scrape_events_inner(city, max_results, event_type, events)
     finally:
         _release_browser_slot()
 
 
-def _scrape_events_inner(city: str, max_results: int, events: list, seen: set, sources: list) -> list:
+def _scrape_events_inner(city: str, max_results: int, event_type: str, events: list) -> list:
+    """Leest de gestructureerde eventdata (JSON-LD) van de Eventbrite-zoekpagina.
+
+    Veel betrouwbaarder dan HTML-elementen aflopen: Eventbrite verandert zijn
+    opmaak regelmatig, maar de JSON-LD bevat altijd naam, datum, plaats en land.
+    Google als bron is bewust weggehaald — die blokkeert de server met een
+    bot-detectiepagina, dus daar kwam nooit iets uit."""
+    import json as json_mod
+    from urllib.parse import quote
+
+    city_slug = quote(city.lower().strip().replace(" ", "-"))
+    type_slug = quote(event_type.lower().strip().replace(" ", "-")) if event_type.strip() else "events"
+    base_url = f"https://www.eventbrite.nl/d/netherlands--{city_slug}/{type_slug}/"
+    seen_links: set = set()
+
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, args=_CHROMIUM_ARGS)
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            viewport={"width": 1280, "height": 800},
-        )
-        context.set_default_timeout(10000)
-        page = context.new_page()
-
-        # Try Eventbrite
+        browser = None
         try:
-            page.goto(sources[0], wait_until="domcontentloaded", timeout=30000)
-            page.wait_for_timeout(3000)
+            browser = p.chromium.launch(headless=True, args=_CHROMIUM_ARGS)
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                viewport={"width": 1280, "height": 800},
+            )
+            context.set_default_timeout(10000)
+            page = context.new_page()
 
-            for text in ["Alles accepteren", "Accept", "I agree"]:
-                try:
-                    page.click(f'button:has-text("{text}")', timeout=2000)
-                    page.wait_for_timeout(500)
+            # Maximaal 2 pagina's: één pagina geeft ±20 events, meer is zelden nodig
+            for page_nr in (1, 2):
+                if len(events) >= max_results:
                     break
-                except Exception:
-                    pass
-
-            cards = page.query_selector_all('article, [data-testid="event-card"], .eds-event-card')
-            for card in cards[:max_results]:
+                url = base_url if page_nr == 1 else f"{base_url}?page={page_nr}"
                 try:
-                    title_el = card.query_selector('h2, h3, .eds-event-card__formatted-name')
-                    date_el = card.query_selector('time, .eds-event-card__sub-title, [data-testid*="date"]')
-                    loc_el = card.query_selector('[data-testid*="location"], .card-text--truncated__one')
-                    link_el = card.query_selector('a')
+                    page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                    page.wait_for_timeout(2500)
+                except Exception as e:
+                    log.warning("Events-scrape: pagina laden mislukt (%s): %s", url, e)
+                    break
 
-                    title = title_el.inner_text().strip() if title_el else ""
-                    date = date_el.inner_text().strip() if date_el else ""
-                    location = loc_el.inner_text().strip() if loc_el else city
-                    link = link_el.get_attribute("href") if link_el else ""
-
-                    if title and title not in seen:
-                        seen.add(title)
-                        events.append({
-                            "id": str(uuid.uuid4()),
-                            "title": title,
-                            "date": date,
-                            "location": location,
-                            "city": city,
-                            "source": "Eventbrite",
-                            "link": link,
-                            "organizer": "",
-                            "email": "",
-                            "phone": "",
-                            "found_at": datetime.now().isoformat(),
-                        })
-                except Exception:
-                    continue
-        except Exception:
-            pass
-
-        # Try Google search for local events
-        if len(events) < max_results:
-            try:
-                page.goto(
-                    f"https://www.google.com/search?q=evenementen+{city}+2025+2026&hl=nl",
-                    wait_until="domcontentloaded", timeout=30000
-                )
-                page.wait_for_timeout(2000)
-
-                # Google events snippet
-                event_cards = page.query_selector_all('[data-attrid*="event"], .YOGjf, .lu_map_section')
-                for card in event_cards[:max_results - len(events)]:
+                found_this_page = 0
+                for script in page.query_selector_all('script[type="application/ld+json"]'):
                     try:
-                        title_el = card.query_selector('div[role="heading"], h3, .YOGjf')
-                        date_el = card.query_selector('.cEZxRc, time, .OGA8xd')
-                        title = title_el.inner_text().strip() if title_el else ""
-                        date = date_el.inner_text().strip() if date_el else ""
-                        if title and title not in seen:
-                            seen.add(title)
+                        data = json_mod.loads(script.inner_text())
+                    except Exception:
+                        continue
+                    for block in (data if isinstance(data, list) else [data]):
+                        if block.get("@type") != "ItemList":
+                            continue
+                        for el in block.get("itemListElement", []):
+                            item = el.get("item", el)
+                            if item.get("@type") != "Event":
+                                continue
+                            title = (item.get("name") or "").strip()
+                            link = (item.get("url") or "").strip()
+                            if not title or link.split("?")[0] in seen_links:
+                                continue
+                            loc = item.get("location") or {}
+                            addr = loc.get("address") or {}
+                            # Alleen Nederland — buitenlandse events overslaan
+                            if (addr.get("addressCountry") or "NL") != "NL":
+                                continue
+                            plaats = (addr.get("addressLocality") or "").strip()
+                            venue = (loc.get("name") or "").strip()
+                            location = ", ".join(x for x in (venue, plaats) if x) or city
+                            seen_links.add(link.split("?")[0])
                             events.append({
                                 "id": str(uuid.uuid4()),
                                 "title": title,
-                                "date": date,
-                                "location": city,
-                                "city": city,
-                                "source": "Google",
-                                "link": "",
+                                "date": _format_event_date(item.get("startDate", ""), item.get("endDate", "")),
+                                "location": location,
+                                "city": plaats or city,
+                                "source": "Eventbrite",
+                                "link": link,
                                 "organizer": "",
                                 "email": "",
                                 "phone": "",
                                 "found_at": datetime.now().isoformat(),
                             })
-                    except Exception:
-                        continue
-            except Exception:
-                pass
+                            found_this_page += 1
+                            if len(events) >= max_results:
+                                break
+                if found_this_page == 0:
+                    # Geen gestructureerde data (meer) — niet verder bladeren
+                    if page_nr == 1:
+                        log.warning("Events-scrape: geen JSON-LD events op %s", url)
+                    break
 
-        try:
-            browser.close()
+            log.info("Events-scrape klaar: %r %r -> %d events", city, event_type, len(events))
         except Exception:
-            pass
+            log.exception("Events-scrape: onverwachte fout voor %r", city)
+        finally:
+            if browser:
+                try:
+                    browser.close()
+                except Exception:
+                    pass
 
     return events
 
@@ -2214,11 +2221,11 @@ def run_search_job(job_id: str, niche: str, city: str, max_results: int, force_t
         jobs[job_id] = {"status": "error", "progress": 0, "message": str(e)}
 
 
-def run_events_job(job_id: str, city: str, max_results: int):
+def run_events_job(job_id: str, city: str, max_results: int, event_type: str = ""):
     jobs[job_id] = {"status": "running", "progress": 0, "message": f"Evenementen zoeken in {city}..."}
     _wait_until_slot_free(job_id)
     try:
-        events = scrape_events(city, max_results)
+        events = scrape_events(city, max_results, event_type)
         all_events = load_events()
         existing_event_keys = {e.get("title", e.get("name", "")).lower().strip() for e in all_events}
         new_events = [e for e in events if e["title"].lower().strip() not in existing_event_keys]
@@ -2301,11 +2308,12 @@ def search():
 def events_search():
     data = request.json
     city = data.get("city", "").strip()
+    event_type = data.get("type", "").strip()
     max_results = min(int(data.get("max", 10)), 50)
     if not city:
         return jsonify({"error": "Vul een stad in"}), 400
     job_id = str(uuid.uuid4())
-    _job_executor.submit(run_events_job, job_id, city, max_results)
+    _job_executor.submit(run_events_job, job_id, city, max_results, event_type)
     return jsonify({"job_id": job_id})
 
 

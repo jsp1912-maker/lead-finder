@@ -1212,6 +1212,7 @@ async function startNameSearch(type) {
 }
 
 async function startEventsSearch() {
+  const type = document.getElementById('e-type').value.trim();
   const city = document.getElementById('e-city').value.trim();
   const max = document.getElementById('e-max').value;
   if (!city) { toast('Vul een stad in', '#ef4444'); return; }
@@ -1221,7 +1222,7 @@ async function startEventsSearch() {
 
   const r = await fetch('/api/events/search', {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({city, max: parseInt(max)})
+    body: JSON.stringify({city, type, max: parseInt(max)})
   });
   const {job_id} = await r.json();
   pollJob(job_id, 'e', async () => {
