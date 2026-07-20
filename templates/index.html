@@ -28,7 +28,12 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--bg); color:var
   position:fixed; left:0; top:0; bottom:0; width:220px;
   background:#005826; border-right:none;
   display:flex; flex-direction:column; z-index:50;
+  overflow-y:auto;
 }
+/* Smalle, subtiele schuifbalk in het zijmenu */
+.sidebar::-webkit-scrollbar { width:6px; }
+.sidebar::-webkit-scrollbar-thumb { background:rgba(255,255,255,.25); border-radius:3px; }
+.sidebar::-webkit-scrollbar-track { background:transparent; }
 .sidebar-logo { padding:22px 20px 18px; font-size:17px; font-weight:800; color:#fff; letter-spacing:-0.3px; border-bottom:1px solid rgba(255,255,255,.1); }
 .sidebar-logo span { color:#4ade80; }
 .nav-section { padding:16px 16px 6px; font-size:10px; color:rgba(255,255,255,.4); text-transform:uppercase; letter-spacing:1.8px; font-weight:600; }
