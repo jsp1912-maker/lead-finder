@@ -288,6 +288,9 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--bg); color:var
   <button class="nav-item active" id="nav-business" onclick="switchTab('business')">
     <span class="nav-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg></span> Eetgelegenheden
   </button>
+  <button class="nav-item" id="nav-drinken" onclick="switchTab('drinken')">
+    <span class="nav-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg></span> Drinkgelegenheden
+  </button>
   <button class="nav-item" id="nav-sport" onclick="switchTab('sport')">
     <span class="nav-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg></span> Sportverenigingen
   </button>
@@ -322,6 +325,9 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--bg); color:var
 
   <button class="nav-item" onclick="openProfile()">
     <span class="nav-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span> Mijn gegevens
+  </button>
+  <button class="nav-item" onclick="window.location.href='/logout'">
+    <span class="nav-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></span> Uitloggen
   </button>
 
   <div class="sidebar-stats">
@@ -430,6 +436,88 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--bg); color:var
       <div class="progress-wrap" id="pw-b">
         <div class="progress-track"><div class="progress-fill" id="pf-b"></div><div class="progress-beer" id="pb-b">🍺</div><div class="progress-pct" id="pp-b"></div></div>
         <div class="progress-msg" id="pm-b"></div>
+      </div>
+    </div>
+
+    <!-- Drinken search -->
+    <div id="panel-drinken" style="display:none">
+      <div class="search-tabs">
+        <button class="search-tab active" id="dt-broad" onclick="switchSearchTab('drinken','broad')">Breed zoeken</button>
+        <button class="search-tab" id="dt-name" onclick="switchSearchTab('drinken','name')">Op naam zoeken</button>
+      </div>
+      <div id="d-broad">
+      <div class="search-form">
+        <div class="field">
+          <label>Type drinkgelegenheid</label>
+          <select id="d-niche-sel" onchange="smartSelect(this,'d-niche')">
+            <option value="">Kies een type...</option>
+            <option value="kroeg">🍺 Kroeg</option>
+            <option value="café">☕ Café</option>
+            <option value="bar">🍸 Bar</option>
+            <option value="biercafé">🍻 Biercafé</option>
+            <option value="grand café">🥂 Grand Café</option>
+            <option value="cocktailbar">🍹 Cocktailbar</option>
+            <option value="wijnbar">🍷 Wijnbar</option>
+            <option value="terras">☀️ Terras</option>
+            <option value="strandpaviljoen">🏖️ Strandpaviljoen</option>
+            <option value="discotheek">💃 Discotheek / club</option>
+            <option value="studentencafé">🎓 Studentencafé</option>
+            <option value="brouwerij">🏭 Brouwerij</option>
+            <option value="__custom__">✏️ Anders, typ zelf...</option>
+          </select>
+          <input type="text" id="d-niche" placeholder="typ hier je type..." style="display:none;margin-top:4px" />
+        </div>
+        <div class="field">
+          <label>Stad</label>
+          <select id="d-city-sel" onchange="smartSelect(this,'d-city')">
+            <option value="">Kies een stad...</option>
+            <option>Amsterdam</option><option>Rotterdam</option><option>Den Haag</option>
+            <option>Utrecht</option><option>Eindhoven</option><option>Tilburg</option>
+            <option>Groningen</option><option>Almere</option><option>Breda</option>
+            <option>Nijmegen</option><option>Arnhem</option><option>Enschede</option>
+            <option>Haarlem</option><option>Zwolle</option><option>Amersfoort</option>
+            <option>Apeldoorn</option><option>Maastricht</option><option>Leiden</option>
+            <option>Dordrecht</option><option>Zoetermeer</option><option>Delft</option>
+            <option>Deventer</option><option>Alkmaar</option><option>Leeuwarden</option>
+            <option>Venlo</option><option>Ede</option><option>Hilversum</option>
+            <option value="__custom__">✏️ Anders, typ zelf...</option>
+          </select>
+          <input type="text" id="d-city" placeholder="typ hier je stad..." style="display:none;margin-top:4px" />
+        </div>
+        <div class="field">
+          <label>Aantal</label>
+          <select id="d-max">
+            <option value="5">5 leads</option>
+            <option value="10" selected>10 leads</option>
+            <option value="20">20 leads</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Afstand</label>
+          <select id="d-radius">
+            <option value="0">Alleen deze stad</option>
+            <option value="10">+10 km</option>
+            <option value="25">+25 km</option>
+            <option value="50">+50 km</option>
+          </select>
+        </div>
+        <button class="btn-primary" id="btn-d" onclick="startDrinkenSearch()">Zoeken</button>
+      </div>
+      </div>
+      <div id="d-name" style="display:none">
+      <div class="search-form">
+        <div class="field" style="flex:2">
+          <label>Naam van de zaak</label>
+          <input type="text" id="d-name-input" placeholder="bijv. Café De Kroon Nijmegen" />
+        </div>
+        <button class="btn-primary" onclick="startNameSearch('drinken')">Zoeken</button>
+        <button class="btn-primary" onclick="document.getElementById('d-excel-input').click()">📂 Excel</button>
+        <input type="file" id="d-excel-input" accept=".xlsx,.xls" style="display:none" onchange="startExcelSearch('drinken', this)" />
+      </div>
+      </div>
+      <div class="progress-wrap" id="pw-d">
+        <div class="progress-track"><div class="progress-fill" id="pf-d"></div><div class="progress-beer" id="pb-d">🍺</div><div class="progress-pct" id="pp-d"></div></div>
+        <div class="progress-msg" id="pm-d"></div>
       </div>
     </div>
 
@@ -709,7 +797,7 @@ function switchTab(tab) {
   ['all','nieuw','gecontacteerd','geinteresseerd','afgewezen','dashboard'].forEach(v =>
     document.getElementById(`nav-${v}`)?.classList.remove('active'));
 
-  ['business','sport','events'].forEach(t => {
+  ['business','drinken','sport','events'].forEach(t => {
     document.getElementById(`panel-${t}`).style.display = t === tab ? 'block' : 'none';
     document.getElementById(`nav-${t}`).classList.toggle('active', t === tab);
   });
@@ -719,6 +807,7 @@ function switchTab(tab) {
 
   const titles = {
     business: ['Eetgelegenheden zoeken', 'Vind lokale restaurants en eetgelegenheden'],
+    drinken: ['Drinkgelegenheden zoeken', 'Vind cafés, bars en kroegen'],
     sport: ['Sportverenigingen zoeken', 'Vind clubs en scrape het bestuur automatisch'],
     events: ['Evenementen zoeken', 'Vind lokale evenementen en hun organisatoren'],
   };
@@ -727,6 +816,7 @@ function switchTab(tab) {
 
   // Auto-filter op type bij wisselen van tab
   if (tab === 'sport') activeFilter = 'sport';
+  else if (tab === 'drinken') activeFilter = 'drinken';
   else if (tab === 'business') activeFilter = 'business';
 
   if (tab === 'events') renderEvents();
@@ -737,7 +827,7 @@ function switchView(filter) {
   // 'overview': geen type-filter, anders verdwijnen bv. alle sportclubs
   // uit "Alle leads" en de status-weergaven
   activeTab = 'overview';
-  ['business','sport','events'].forEach(t => {
+  ['business','drinken','sport','events'].forEach(t => {
     document.getElementById(`panel-${t}`).style.display = 'none';
     document.getElementById(`nav-${t}`).classList.remove('active');
   });
@@ -763,7 +853,8 @@ function renderDashboard() {
   const leads = allLeads;
   const total = leads.length;
   const sport = leads.filter(l => l.type === 'sport').length;
-  const eten  = leads.filter(l => l.type !== 'sport').length;
+  const drinken = leads.filter(l => l.type === 'drinken').length;
+  const eten  = leads.filter(l => l.type !== 'sport' && l.type !== 'drinken').length;
   const withEmail = leads.filter(l => l.email).length;
 
   const byStatus = s => leads.filter(l => (l.status || 'nieuw') === s).length;
@@ -798,7 +889,7 @@ function renderDashboard() {
       <div class="dash-card dash-card-accent">
         <div class="dash-card-label">Totaal leads</div>
         <div class="dash-card-value">${total}</div>
-        <div class="dash-card-sub">${sport} sport · ${eten} eten</div>
+        <div class="dash-card-sub">${sport} sport · ${eten} eten · ${drinken} drinken</div>
       </div>
       <div class="dash-card dash-card-blue">
         <div class="dash-card-label">Gecontacteerd</div>
@@ -863,7 +954,7 @@ function renderDashboard() {
             </div>`).join('') : '<div style="color:var(--text-muted);font-size:13px">Nog geen leads met stad</div>'}
         </div>
         <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
-          <div class="dash-card-label" style="margin-bottom:10px">Sport vs Eetgelegenheid</div>
+          <div class="dash-card-label" style="margin-bottom:10px">Type leads</div>
           <div class="dash-bar-row">
             <div class="dash-bar-label">Sport</div>
             <div class="dash-bar-track"><div class="dash-bar-fill" style="width:${pct(sport)}%;background:#005826"></div></div>
@@ -875,6 +966,12 @@ function renderDashboard() {
             <div class="dash-bar-track"><div class="dash-bar-fill" style="width:${pct(eten)}%;background:#2563eb"></div></div>
             <div class="dash-bar-count">${eten}</div>
             <div class="dash-pct">${pct(eten)}%</div>
+          </div>
+          <div class="dash-bar-row">
+            <div class="dash-bar-label">Drinkgelegenheid</div>
+            <div class="dash-bar-track"><div class="dash-bar-fill" style="width:${pct(drinken)}%;background:#d97706"></div></div>
+            <div class="dash-bar-count">${drinken}</div>
+            <div class="dash-pct">${pct(drinken)}%</div>
           </div>
         </div>
       </div>
@@ -889,6 +986,15 @@ async function startBusinessSearch() {
   const radius = parseInt(document.getElementById('b-radius').value);
   if (!niche || !city) { toast('Vul niche en stad in', '#ef4444'); return; }
   await doSearch({niche, city, max: parseInt(max), radius}, 'b');
+}
+
+async function startDrinkenSearch() {
+  const niche = getFieldValue('d-niche-sel', 'd-niche');
+  const city = getFieldValue('d-city-sel', 'd-city');
+  const max = document.getElementById('d-max').value;
+  const radius = parseInt(document.getElementById('d-radius').value);
+  if (!niche || !city) { toast('Vul type en stad in', '#ef4444'); return; }
+  await doSearch({niche, city, max: parseInt(max), radius, force_type: 'drinken'}, 'd');
 }
 
 async function startSportSearch() {
@@ -932,7 +1038,7 @@ function quickEvent(type) {
 }
 
 function switchSearchTab(panel, mode) {
-  const prefix = panel === 'business' ? 'b' : 's';
+  const prefix = panel === 'business' ? 'b' : panel === 'drinken' ? 'd' : 's';
   document.getElementById(`${prefix}-broad`).style.display = mode === 'broad' ? 'block' : 'none';
   document.getElementById(`${prefix}-name`).style.display  = mode === 'name'  ? 'block' : 'none';
   document.getElementById(`${prefix}t-broad`).classList.toggle('active', mode === 'broad');
@@ -965,12 +1071,13 @@ async function startExcelSearch(type, input) {
   input.value = '';
 
   const isSport = type === 'sport';
-  const pwId = isSport ? 'pw-s' : 'pw-b';
-  const pfId = isSport ? 'pf-s' : 'pf-b';
-  const pmId = isSport ? 'pm-s' : 'pm-b';
+  const prefix = isSport ? 's' : type === 'drinken' ? 'd' : 'b';
+  const pwId = `pw-${prefix}`;
+  const pfId = `pf-${prefix}`;
+  const pmId = `pm-${prefix}`;
 
   document.getElementById(pwId).style.display = 'block';
-  setBeer(isSport ? 's' : 'b', 5);
+  setBeer(prefix, 5);
   document.getElementById(pmId).textContent = 'Excel inlezen...';
 
   const formData = new FormData();
@@ -1019,7 +1126,7 @@ async function startExcelSearch(type, input) {
 
   let done = 0, gevonden = 0, nietGevonden = [], log = [];
   for (const name of namesToProcess) {
-    setBeer(isSport ? 's' : 'b', Math.round((done / namesToProcess.length) * 100));
+    setBeer(prefix, Math.round((done / namesToProcess.length) * 100));
     document.getElementById(pmId).textContent = `Zoeken (${done + 1}/${namesToProcess.length}): ${name}`;
 
     // Stap 1: Google Maps
@@ -1057,7 +1164,7 @@ async function startExcelSearch(type, input) {
     await loadLeads();
   }
 
-  setBeer(isSport ? 's' : 'b', 100);
+  setBeer(prefix, 100);
   await loadLeads();
 
   // Toon resultaten-popup
@@ -1072,17 +1179,17 @@ async function startExcelSearch(type, input) {
 }
 
 async function startNameSearch(type) {
-  const isSport = type === 'sport';
-  const inputId = isSport ? 's-name-input' : 'b-name-input';
-  const pwId    = isSport ? 'pw-s' : 'pw-b';
-  const pfId    = isSport ? 'pf-s' : 'pf-b';
-  const pmId    = isSport ? 'pm-s' : 'pm-b';
+  const prefix = type === 'sport' ? 's' : type === 'drinken' ? 'd' : 'b';
+  const inputId = `${prefix}-name-input`;
+  const pwId    = `pw-${prefix}`;
+  const pfId    = `pf-${prefix}`;
+  const pmId    = `pm-${prefix}`;
 
   const name = document.getElementById(inputId).value.trim();
   if (!name) { toast('Vul een naam in', '#ef4444'); return; }
 
   document.getElementById(pwId).style.display = 'block';
-  setBeer(isSport ? 's' : 'b', 30);
+  setBeer(prefix, 30);
   document.getElementById(pmId).textContent = `Zoeken naar "${name}"...`;
 
   const r = await fetch('/api/search', {
@@ -1092,7 +1199,7 @@ async function startNameSearch(type) {
   });
   const { job_id } = await r.json();
 
-  pollJob(job_id, isSport ? 's' : 'b', async () => {
+  pollJob(job_id, prefix, async () => {
     await loadLeads();
     document.getElementById(pwId).style.display = 'none';
     toast(`Lead toegevoegd!`, '#10b981');
@@ -1258,7 +1365,8 @@ function renderLeads() {
 
   // Tab filter (only apply when not in status-view mode and not showing all)
   if (activeTab === 'sport') leads = leads.filter(l => l.type === 'sport');
-  else if (activeTab === 'business') leads = leads.filter(l => l.type !== 'sport');
+  else if (activeTab === 'drinken') leads = leads.filter(l => l.type === 'drinken');
+  else if (activeTab === 'business') leads = leads.filter(l => l.type !== 'sport' && l.type !== 'drinken');
 
   if (activeFilter.startsWith('q-'))
     leads = leads.filter(l => qualityKey(l) === activeFilter);
@@ -1271,7 +1379,7 @@ function renderLeads() {
   leads = applySort(leads);
 
   if (!leads.length) {
-    const filterMsg = activeFilter !== 'all' && activeFilter !== 'sport' && activeFilter !== 'business'
+    const filterMsg = activeFilter !== 'all' && activeFilter !== 'sport' && activeFilter !== 'drinken' && activeFilter !== 'business'
       ? `Geen leads gevonden met dit filter. Klik op <strong>Alle</strong> om alles te zien.`
       : `Geen leads. Gebruik het zoekveld hierboven.`;
     grid.innerHTML = `<div class="empty"><div class="empty-icon">🔍</div><div class="empty-text">${filterMsg}</div></div>`;
@@ -1309,7 +1417,7 @@ function businessCardHTML(l) {
     : null;
   const img = screenshotSrc
     ? `<img class="card-img" src="${screenshotSrc}" loading="lazy" alt="">`
-    : `<div class="card-no-img"><div class="card-no-img-icon">🍽️</div><span>${l.website ? 'Geen screenshot' : 'Geen website'}</span></div>`;
+    : `<div class="card-no-img"><div class="card-no-img-icon">${l.type === 'drinken' ? '🍺' : '🍽️'}</div><span>${l.website ? 'Geen screenshot' : 'Geen website'}</span></div>`;
 
   const web = l.website
     ? `<a href="${l.website}" target="_blank">${l.website.replace(/^https?:\/\//,'').split('?')[0].substring(0,40)}</a>`
@@ -1888,7 +1996,8 @@ function doExport(mode) {
   let leads = allLeads;
   if (mode === 'view') {
     if (activeTab === 'sport') leads = leads.filter(l => l.type === 'sport');
-    else if (activeTab === 'business') leads = leads.filter(l => l.type !== 'sport');
+    else if (activeTab === 'drinken') leads = leads.filter(l => l.type === 'drinken');
+    else if (activeTab === 'business') leads = leads.filter(l => l.type !== 'sport' && l.type !== 'drinken');
     if (activeFilter.startsWith('q-')) leads = leads.filter(l => qualityKey(l) === activeFilter);
     if (activeFilter.startsWith('status-')) leads = leads.filter(l => (l.status||'nieuw') === activeFilter.replace('status-',''));
   } else if (mode !== 'all') {

@@ -538,6 +538,11 @@ def get_gemeente(city: str) -> str:
 
 # ── Google Maps scraper ───────────────────────────────────────────────────────
 
+# Buurlanden die soms in Maps-resultaten opduiken; die leads slaan we over
+_BUITENLAND = ("belgië", "belgie", "belgium", "duitsland", "germany", "deutschland",
+               "frankrijk", "france", "luxemburg", "luxembourg")
+
+
 def scrape_google_maps(niche: str, city: str, max_results: int, results: list = None) -> list:
     query = f"{niche} {city}".strip() if city and city.lower() not in ("", "nederland") else niche
     # De aanroeper (watchdog) kan een lijst meegeven zodat deelresultaten
@@ -569,8 +574,10 @@ def _scrape_google_maps_inner(query: str, niche: str, city: str, max_results: in
             context.set_default_timeout(10000)
             page = context.new_page()
             try:
+                # Kaart vast boven Nederland (@lat,lng,zoom) zodat resultaten
+                # uit het buitenland niet meegenomen worden
                 page.goto(
-                    f"https://www.google.com/maps/search/{query.replace(' ', '+')}",
+                    f"https://www.google.com/maps/search/{query.replace(' ', '+')}/@52.1326,5.2913,8z?hl=nl",
                     wait_until="domcontentloaded", timeout=30000
                 )
             except Exception as e:
@@ -703,6 +710,11 @@ def _scrape_google_maps_inner(query: str, niche: str, city: str, max_results: in
                             rating = el.inner_text().strip()
                     except Exception:
                         pass
+
+                    # Alleen Nederland: adressen uit buurlanden overslaan
+                    if address and any(land in address.lower() for land in _BUITENLAND):
+                        log.info("Maps-scrape: %r overgeslagen (buitenlands adres: %s)", name, address)
+                        continue
 
                     results.append({
                         "id": str(uuid.uuid4()),
@@ -1876,6 +1888,9 @@ def _personalize_email(html: str, user) -> str:
     import html as html_mod
     if not html or not user:
         return html
+    # Functietitel altijd met hoofdletters, ook in al eerder gegenereerde mails
+    for variant in ("new business accountmanager", "New business accountmanager", "new Business Accountmanager"):
+        html = html.replace(variant, "New Business Accountmanager")
     name = (getattr(user, "name", "") or "").strip()
     email = (getattr(user, "email", "") or "").strip()
     phone = (getattr(user, "phone", "") or "").strip()
@@ -2080,10 +2095,9 @@ def run_search_job(job_id: str, niche: str, city: str, max_results: int, force_t
     # Ruim genoeg voor serieel browserwerk (1 browser tegelijk op de server)
     MAX_JOB_SECONDS = 300
     try:
-        if force_type == "sport":
-            sport = True
-        elif force_type == "business":
-            sport = False
+        if force_type:
+            # "sport" krijgt bestuurs-scraping; "business" en "drinken" niet
+            sport = force_type == "sport"
         else:
             sport = is_sport(niche)
 
@@ -2642,7 +2656,7 @@ def export_leads():
         qkey = "q-low" if score <= 1 else "q-mid" if score <= 2 else "q-high" if score <= 3 else "q-full"
         ws.append([
             l.get("name", ""),
-            "Sportclub" if l.get("type") == "sport" else "Eetgelegenheid",
+            "Sportclub" if l.get("type") == "sport" else "Drinkgelegenheid" if l.get("type") == "drinken" else "Eetgelegenheid",
             l.get("niche", ""),
             l.get("city", ""),
             l.get("address", ""),
