@@ -138,6 +138,9 @@ EMAIL_TEMPLATES = {
     "hockey": _load_template("hockey"),
     "golf": _load_template("golf"),
     "eten": _load_template("eten"),
+    # Algemene "we zijn langs geweest maar er was niemand"-mail. Past bij elke
+    # zaak (sport én horeca) en is als los te kiezen alternatief beschikbaar.
+    "niemand": _load_template("niemand"),
 }
 
 jobs = {}
@@ -1938,6 +1941,17 @@ def generate_cold_email(business: dict) -> str:
     return f"<p>Email template niet beschikbaar voor {name}</p>"
 
 
+def generate_niemand_email(business: dict) -> str:
+    """Algemene 'we zijn langs geweest maar er was niemand'-mail. Past bij elke
+    zaak; toont het logo als dat beschikbaar is."""
+    name = business["name"]
+    logo_url = business.get("logo_url", "")
+    raw_html = EMAIL_TEMPLATES.get("niemand", "")
+    if raw_html:
+        return _apply_email_template(raw_html, name, logo_url, is_sport=bool(logo_url))
+    return f"<p>Email template niet beschikbaar voor {name}</p>"
+
+
 def find_website_by_name(name: str) -> str:
     """Zoek de officiële website van een club via DuckDuckGo."""
     import time
@@ -2457,9 +2471,17 @@ def update_lead_status(lead_id):
 @app.route("/api/leads/<lead_id>/email")
 @login_required
 def get_lead_email(lead_id):
-    html = load_email(lead_id)
+    variant = (request.args.get("variant") or "").strip()
     leads = load_leads(current_user.id)
     lead = next((l for l in leads if l["id"] == lead_id), None)
+
+    # "Niemand aanwezig"-variant: los te kiezen algemene mail. Wordt live
+    # opgebouwd en NIET opgeslagen, zodat de standaardmail bewaard blijft.
+    if variant == "niemand":
+        html = generate_niemand_email(lead) if lead else "<p>Lead niet gevonden</p>"
+        return jsonify({"html": _personalize_email(html, current_user)})
+
+    html = load_email(lead_id)
     if lead:
         logo_url = lead.get("logo_url", "")
         # Regenerate if email is missing, or has a logo available but email doesn't show it

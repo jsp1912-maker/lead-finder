@@ -739,6 +739,13 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--bg); color:var
       <h3 id="modal-name">Cold Email</h3>
       <button class="btn-close" onclick="closeModal('modal-email')">&#x2715;</button>
     </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <label for="email-variant" style="font-size:13px;color:#64748b">Soort mail:</label>
+      <select id="email-variant" onchange="reloadEmailVariant()" style="padding:6px 10px;border:1px solid var(--border2);border-radius:7px;background:var(--bg);color:var(--text);font-size:13px">
+        <option value="">Standaard mail</option>
+        <option value="niemand">Niemand aanwezig (langs geweest)</option>
+      </select>
+    </div>
     <iframe id="modal-iframe" style="width:100%;height:60vh;border:1px solid var(--border);border-radius:8px;background:#fff"></iframe>
     <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
       <button class="btn-copy" onclick="copyEmailText()">Kopieer tekst</button>
@@ -1588,8 +1595,16 @@ async function showEmail(id) {
     sentBtn.style.background = '#005826';
   }
   document.getElementById('modal-email').classList.add('open');
+  // Altijd starten met de standaardmail bij het openen van een lead
+  document.getElementById('email-variant').value = '';
+  await loadEmailContent(id, '');
+}
+
+// Haalt de mail (evt. een gekozen variant) op en tekent hem in het iframe
+async function loadEmailContent(id, variant) {
   const iframe = document.getElementById('modal-iframe');
-  const res = await fetch(`/api/leads/${id}/email`);
+  const url = variant ? `/api/leads/${id}/email?variant=${encodeURIComponent(variant)}` : `/api/leads/${id}/email`;
+  const res = await fetch(url);
   const data = await res.json();
   const emailContent = data.html || '<p>Geen email beschikbaar</p>';
   const doc = iframe.contentDocument || iframe.contentWindow.document;
@@ -1605,6 +1620,13 @@ async function showEmail(id) {
       }
     });
   }, 50);
+}
+
+// Wisselt van mailsoort via het keuzemenuutje bovenaan het venster
+function reloadEmailVariant() {
+  if (!currentEmailLeadId) return;
+  const variant = document.getElementById('email-variant').value;
+  loadEmailContent(currentEmailLeadId, variant);
 }
 
 function showBoard(id) {
