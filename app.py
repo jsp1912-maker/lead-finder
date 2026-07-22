@@ -116,6 +116,16 @@ with app.app_context():
     except Exception:
         log.exception("Telefoonkolom-migratie mislukt")
 
+# Beheerders mogen collega-wachtwoorden resetten via "Mijn gegevens".
+# E-mail in kleine letters; uitbreidbaar via de ADMIN_EMAILS-omgevingsvariabele
+# (komma-gescheiden) zonder code te wijzigen.
+ADMIN_EMAILS = {"jsp1912@gmail.com"} | {
+    e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()
+}
+
+def _is_admin(user) -> bool:
+    return bool(user) and (getattr(user, "email", "") or "").lower() in ADMIN_EMAILS
+
 SCREENSHOTS_DIR = os.path.join(os.path.dirname(__file__), "screenshots")
 DATA_FILE = os.path.join(os.path.dirname(__file__), "leads_db.json")
 EVENTS_FILE = os.path.join(os.path.dirname(__file__), "events_db.json")
@@ -2504,7 +2514,38 @@ def profile():
         user = db.session.get(User, current_user.id)
         user.phone = phone
         db.session.commit()
-    return jsonify({"name": current_user.name, "email": current_user.email, "phone": phone})
+    result = {"name": current_user.name, "email": current_user.email, "phone": phone,
+              "is_admin": _is_admin(current_user)}
+    # Beheerders krijgen de lijst met collega's mee voor het reset-keuzemenu
+    if _is_admin(current_user):
+        others = User.query.order_by(User.name).all()
+        result["accounts"] = [
+            {"naam": u.name, "email": u.email}
+            for u in others if u.id != current_user.id
+        ]
+    return jsonify(result)
+
+
+@app.route("/api/admin/reset-password", methods=["POST"])
+@login_required
+def admin_reset_password():
+    """Alleen voor beheerders: stelt een nieuw (tijdelijk) wachtwoord in voor een
+    collega die niet meer kan inloggen. Wachtwoorden zelf zijn nergens leesbaar,
+    dus resetten is de enige veilige manier om weer toegang te geven."""
+    if not _is_admin(current_user):
+        return jsonify({"error": "Geen rechten voor deze actie"}), 403
+    data = request.json or {}
+    email = (data.get("email") or "").strip().lower()
+    new_password = (data.get("password") or "").strip()
+    if not email or len(new_password) < 6:
+        return jsonify({"error": "E-mail en een wachtwoord van minstens 6 tekens zijn verplicht"}), 400
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify({"error": "Geen account gevonden met dit e-mailadres"}), 404
+    user.set_password(new_password)
+    db.session.commit()
+    log.info("Wachtwoord gereset voor %s door beheerder %s", email, current_user.email)
+    return jsonify({"ok": True, "naam": user.name})
 
 
 @app.route("/api/leads/<lead_id>", methods=["DELETE"])

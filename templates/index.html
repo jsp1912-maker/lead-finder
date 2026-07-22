@@ -729,6 +729,16 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--bg); color:var
     <div class="field" style="margin-bottom:10px"><label>E-mail</label><input id="prof-email" disabled></div>
     <div class="field" style="margin-bottom:14px"><label>Telefoonnummer</label><input id="prof-phone" placeholder="+31612345678"></div>
     <button class="btn-copy" style="background:#005826" onclick="saveProfile()">Opslaan</button>
+
+    <!-- Alleen zichtbaar voor beheerders -->
+    <div id="admin-reset" style="display:none;margin-top:20px;padding-top:16px;border-top:1px solid var(--border2,#e2e8f0)">
+      <h4 style="margin:0 0 4px;font-size:0.95rem;color:var(--text)">Collega-wachtwoord resetten</h4>
+      <p style="font-size:0.8rem;color:#64748b;margin:0 0 10px">Voor een collega die niet meer kan inloggen. Geef het nieuwe wachtwoord daarna zelf aan hem/haar door.</p>
+      <div class="field" style="margin-bottom:10px"><label>Collega</label><select id="reset-email"></select></div>
+      <div class="field" style="margin-bottom:10px"><label>Nieuw wachtwoord</label><input id="reset-pw" placeholder="minstens 6 tekens"></div>
+      <button class="btn-copy" type="button" style="background:#0ea5e9;margin-right:6px" onclick="suggestPassword()">Verzin wachtwoord</button>
+      <button class="btn-copy" type="button" style="background:#b45309" onclick="resetColleaguePassword()">Wachtwoord instellen</button>
+    </div>
   </div>
 </div>
 
@@ -1719,7 +1729,45 @@ async function openProfile() {
   document.getElementById('prof-name').value = p.name || '';
   document.getElementById('prof-email').value = p.email || '';
   document.getElementById('prof-phone').value = p.phone || '';
+  // Admin-blok alleen tonen voor beheerders; keuzemenu vullen met collega's
+  const adminBox = document.getElementById('admin-reset');
+  if (p.is_admin) {
+    const sel = document.getElementById('reset-email');
+    sel.innerHTML = (p.accounts || [])
+      .map(a => `<option value="${esc(a.email)}">${esc(a.naam)} — ${esc(a.email)}</option>`)
+      .join('');
+    document.getElementById('reset-pw').value = '';
+    adminBox.style.display = 'block';
+  } else {
+    adminBox.style.display = 'none';
+  }
   document.getElementById('modal-profile').classList.add('open');
+}
+
+// Verzin een makkelijk door te geven tijdelijk wachtwoord
+function suggestPassword() {
+  const woorden = ['Zon', 'Maan', 'Bier', 'Groen', 'Ster', 'Tulp', 'Kaas', 'Fiets'];
+  const w = woorden[Math.floor(Math.random() * woorden.length)];
+  const n = Math.floor(1000 + Math.random() * 9000);
+  document.getElementById('reset-pw').value = `${w}${n}!`;
+}
+
+async function resetColleaguePassword() {
+  const email = document.getElementById('reset-email').value;
+  const password = document.getElementById('reset-pw').value.trim();
+  if (!email) { toast('Kies eerst een collega', '#ef4444'); return; }
+  if (password.length < 6) { toast('Wachtwoord moet minstens 6 tekens zijn', '#ef4444'); return; }
+  const r = await fetch('/api/admin/reset-password', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({email, password})
+  });
+  const d = await r.json().catch(() => ({}));
+  if (r.ok) {
+    toast(`Wachtwoord van ${d.naam || email} is ingesteld op: ${password}`, '#005826');
+  } else {
+    toast(d.error || 'Resetten mislukt', '#ef4444');
+  }
 }
 
 async function saveProfile() {
