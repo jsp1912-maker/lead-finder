@@ -155,14 +155,19 @@ EMAIL_TEMPLATES = {
 
 jobs = {}
 _leads_lock = threading.Lock()
-_job_executor = ThreadPoolExecutor(max_workers=4)
 
-# Max 3 browsers tegelijk op de héle server. Elke Chromium kost ~400MB.
-# Historie: t/m 2026-07-09 stond dit op 1 omdat het Railway-trialplan maar 1GB
-# geheugen gaf (2 gelijktijdige launches → 920MB+ en alles bevroor). Op 2026-07-10
-# is geüpgraded naar het Hobby-plan (geheugengrens 48GB), dus 3 kan nu veilig.
-_BROWSER_SLOTS_TOTAL = 3
+# Hoeveel zoekopdrachten tegelijk mogen draaien op de héle server. Elke Chromium
+# kost ~400MB. Historie: t/m 2026-07-09 stond dit op 1 (Railway-trial, 1GB geheugen:
+# 2 gelijktijdige launches → 920MB+ en alles bevroor). Op 2026-07-10 naar het
+# Hobby-plan (geheugengrens 48GB) en op 3 gezet; met meer collega's (juli 2026:
+# richting 15 accounts) verhoogd naar 6 zodat wachten zeldzaam blijft — 6×400MB =
+# ~2,4GB, ruim binnen 48GB. Instelbaar via de BROWSER_SLOTS-omgevingsvariabele op
+# Railway, zodat op-/afschalen kan zonder code te wijzigen.
+_BROWSER_SLOTS_TOTAL = max(1, int(os.environ.get("BROWSER_SLOTS", "6")))
 _browser_slots = threading.Semaphore(_BROWSER_SLOTS_TOTAL)
+# Iets meer werkthreads dan slots, zodat een wachtende job meteen klaarstaat om
+# een vrijkomend browser-slot te pakken.
+_job_executor = ThreadPoolExecutor(max_workers=_BROWSER_SLOTS_TOTAL + 2)
 _slot_holders: dict = {}  # thread-id -> (omschrijving, starttijd)
 _slot_lock = threading.Lock()
 _SLOT_STUCK_SECONDS = 240
