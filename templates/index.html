@@ -1611,12 +1611,19 @@ async function showEmail(id) {
   await loadEmailContent(id, '');
 }
 
+// Volgnummer zodat een trage, verouderde laadactie het scherm niet meer
+// overschrijft nadat de gebruiker al een andere mailsoort heeft gekozen.
+let emailLoadSeq = 0;
+
 // Haalt de mail (evt. een gekozen variant) op en tekent hem in het iframe
 async function loadEmailContent(id, variant) {
+  const seq = ++emailLoadSeq;
   const iframe = document.getElementById('modal-iframe');
   const url = variant ? `/api/leads/${id}/email?variant=${encodeURIComponent(variant)}` : `/api/leads/${id}/email`;
   const res = await fetch(url);
   const data = await res.json();
+  // Ondertussen een nieuwere mailsoort gekozen? Dan dit verouderde antwoord negeren.
+  if (seq !== emailLoadSeq) return;
   const emailContent = data.html || '<p>Geen email beschikbaar</p>';
   const doc = iframe.contentDocument || iframe.contentWindow.document;
   doc.open();
