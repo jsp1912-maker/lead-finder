@@ -113,8 +113,11 @@ with app.app_context():
         if "phone" not in _user_cols:
             db.session.execute(_sa_text("ALTER TABLE users ADD COLUMN phone VARCHAR(30)"))
             db.session.commit()
+        if "functie" not in _user_cols:
+            db.session.execute(_sa_text("ALTER TABLE users ADD COLUMN functie VARCHAR(80)"))
+            db.session.commit()
     except Exception:
-        log.exception("Telefoonkolom-migratie mislukt")
+        log.exception("Gebruikerskolom-migratie mislukt")
 
 # Beheerders mogen collega-wachtwoorden resetten via "Mijn gegevens".
 # E-mail in kleine letters; uitbreidbaar via de ADMIN_EMAILS-omgevingsvariabele
@@ -1902,6 +1905,9 @@ def _fill_menu_pairing(raw_html: str, website: str) -> str:
 _TEMPLATE_SENDER_NAME = "Julian Vaanholt"
 _TEMPLATE_SENDER_EMAIL = "julian.vaanholt@heineken.com"
 _TEMPLATE_SENDER_PHONE = "+31649175451"
+# Standaard functietitel in de sjablonen; wordt vervangen door de eigen functie
+# van de gebruiker als die er een heeft ingevuld bij "Mijn gegevens".
+_TEMPLATE_SENDER_TITLE = "New Business Accountmanager"
 
 
 def _personalize_email(html: str, user) -> str:
@@ -1915,7 +1921,11 @@ def _personalize_email(html: str, user) -> str:
         return html
     # Functietitel altijd met hoofdletters, ook in al eerder gegenereerde mails
     for variant in ("new business accountmanager", "New business accountmanager", "new Business Accountmanager"):
-        html = html.replace(variant, "New Business Accountmanager")
+        html = html.replace(variant, _TEMPLATE_SENDER_TITLE)
+    # Eigen functie ingevuld? Dan de standaardtitel daardoor vervangen
+    functie = (getattr(user, "functie", "") or "").strip()
+    if functie and functie != _TEMPLATE_SENDER_TITLE:
+        html = html.replace(_TEMPLATE_SENDER_TITLE, html_mod.escape(functie))
     name = (getattr(user, "name", "") or "").strip()
     email = (getattr(user, "email", "") or "").strip()
     phone = (getattr(user, "phone", "") or "").strip()
@@ -2510,17 +2520,21 @@ def get_lead_email(lead_id):
 @app.route("/api/profile", methods=["GET", "POST"])
 @login_required
 def profile():
-    """Eigen gegevens van de ingelogde gebruiker; het telefoonnummer is aanpasbaar
-    en komt (net als naam en e-mail) automatisch in de handtekening van elke mail."""
+    """Eigen gegevens van de ingelogde gebruiker; telefoonnummer en functie zijn
+    aanpasbaar en komen (net als naam en e-mail) automatisch in de handtekening
+    van elke mail."""
     phone = getattr(current_user, "phone", "") or ""
+    functie = getattr(current_user, "functie", "") or ""
     if request.method == "POST":
         data = request.json or {}
         phone = (data.get("phone") or "").strip()[:30]
+        functie = (data.get("functie") or "").strip()[:80]
         user = db.session.get(User, current_user.id)
         user.phone = phone
+        user.functie = functie
         db.session.commit()
     result = {"name": current_user.name, "email": current_user.email, "phone": phone,
-              "is_admin": _is_admin(current_user)}
+              "functie": functie, "is_admin": _is_admin(current_user)}
     # Beheerders krijgen de lijst met collega's mee voor het reset-keuzemenu
     if _is_admin(current_user):
         others = User.query.order_by(User.name).all()

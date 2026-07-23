@@ -18,6 +18,9 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(256), nullable=False)
     # Telefoonnummer van de accountmanager: komt in de handtekening van elke mail
     phone = db.Column(db.String(30), default="")
+    # Functie/titel (bijv. "New Business Accountmanager"): komt in de handtekening.
+    # Leeg = de standaardtitel uit het sjabloon blijft staan.
+    functie = db.Column(db.String(80), default="")
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     leads = db.relationship("Lead", backref="owner", lazy=True, cascade="all, delete-orphan")
 

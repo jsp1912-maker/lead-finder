@@ -727,6 +727,7 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--bg); color:var
     <p style="font-size:0.85rem;color:#64748b;margin:0 0 12px">Deze gegevens komen automatisch in de aanhef en handtekening van elke mail, in plaats van de voorbeeldgegevens uit het sjabloon.</p>
     <div class="field" style="margin-bottom:10px"><label>Naam</label><input id="prof-name" disabled></div>
     <div class="field" style="margin-bottom:10px"><label>E-mail</label><input id="prof-email" disabled></div>
+    <div class="field" style="margin-bottom:10px"><label>Functie</label><input id="prof-functie" placeholder="bijv. New Business Accountmanager"></div>
     <div class="field" style="margin-bottom:14px"><label>Telefoonnummer</label><input id="prof-phone" placeholder="+31612345678"></div>
     <button class="btn-copy" style="background:#005826" onclick="saveProfile()">Opslaan</button>
 
@@ -1728,6 +1729,7 @@ async function openProfile() {
   const p = await r.json();
   document.getElementById('prof-name').value = p.name || '';
   document.getElementById('prof-email').value = p.email || '';
+  document.getElementById('prof-functie').value = p.functie || '';
   document.getElementById('prof-phone').value = p.phone || '';
   // Admin-blok alleen tonen voor beheerders; keuzemenu vullen met collega's
   const adminBox = document.getElementById('admin-reset');
@@ -1772,10 +1774,11 @@ async function resetColleaguePassword() {
 
 async function saveProfile() {
   const phone = document.getElementById('prof-phone').value.trim();
+  const functie = document.getElementById('prof-functie').value.trim();
   const r = await fetch('/api/profile', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({phone})
+    body: JSON.stringify({phone, functie})
   });
   if (r.ok) {
     closeModal('modal-profile');
