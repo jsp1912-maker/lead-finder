@@ -1971,8 +1971,14 @@ def generate_niemand_email(business: dict) -> str:
     zaak; toont het logo als dat beschikbaar is."""
     name = business["name"]
     logo_url = business.get("logo_url", "")
+    lead_type = business.get("type", "business")
     raw_html = EMAIL_TEMPLATES.get("niemand", "")
     if raw_html:
+        # Het sjabloon is geschreven voor horeca ("in contact met horecazaken").
+        # Bij een sportclub past dat woord niet; vervang het door "sportverenigingen".
+        # Kroeg/restaurant zijn wél horeca, dus daar blijft de tekst ongewijzigd.
+        if lead_type == "sport":
+            raw_html = raw_html.replace("horecazaken", "sportverenigingen")
         return _apply_email_template(raw_html, name, logo_url, is_sport=bool(logo_url))
     return f"<p>Email template niet beschikbaar voor {name}</p>"
 
