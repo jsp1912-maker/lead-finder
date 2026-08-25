@@ -21,6 +21,9 @@ class User(UserMixin, db.Model):
     # Functie/titel (bijv. "New Business Accountmanager"): komt in de handtekening.
     # Leeg = de standaardtitel uit het sjabloon blijft staan.
     functie = db.Column(db.String(80), default="")
+    # Nieuwe accounts moeten door een beheerder worden goedgekeurd voordat ze
+    # kunnen inloggen/zoeken. Bestaande accounts krijgen bij de migratie True.
+    approved = db.Column(db.Boolean, default=False, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     leads = db.relationship("Lead", backref="owner", lazy=True, cascade="all, delete-orphan")
 

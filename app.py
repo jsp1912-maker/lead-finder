@@ -116,6 +116,12 @@ with app.app_context():
         if "functie" not in _user_cols:
             db.session.execute(_sa_text("ALTER TABLE users ADD COLUMN functie VARCHAR(80)"))
             db.session.commit()
+        if "approved" not in _user_cols:
+            # DEFAULT TRUE zorgt dat alle bestaande accounts meteen goedgekeurd zijn,
+            # zodat niemand die er nu in zit buitengesloten raakt. Nieuwe aanmeldingen
+            # zetten approved expliciet op False (zie register_page).
+            db.session.execute(_sa_text("ALTER TABLE users ADD COLUMN approved BOOLEAN DEFAULT TRUE"))
+            db.session.commit()
     except Exception:
         log.exception("Gebruikerskolom-migratie mislukt")
 
@@ -2293,6 +2299,14 @@ def login_page():
         password = request.form.get("password", "")
         user = User.query.filter_by(email=email).first()
         if user and user.check_password(password):
+            # Nog niet goedgekeurde accounts kunnen niet inloggen. Beheerders komen
+            # altijd binnen (vangnet tegen buitensluiten van de admin zelf).
+            if not getattr(user, "approved", True) and not _is_admin(user):
+                return render_template(
+                    "login.html",
+                    error="Je account wacht nog op goedkeuring door de beheerder. "
+                          "Je krijgt toegang zodra je account is goedgekeurd.",
+                )
             login_user(user)
             return redirect(url_for('index'))
         return render_template("login.html", error="Ongeldig e-mailadres of wachtwoord")
@@ -2309,12 +2323,21 @@ def register_page():
         password = request.form.get("password", "")
         if User.query.filter_by(email=email).first():
             return render_template("register.html", error="Dit e-mailadres is al in gebruik")
-        user = User(name=name, email=email)
+        # Beheerders worden meteen goedgekeurd; andere aanmeldingen wachten op
+        # goedkeuring door een beheerder (zie "Mijn gegevens").
+        is_admin_email = email in ADMIN_EMAILS
+        user = User(name=name, email=email, approved=is_admin_email)
         user.set_password(password)
         db.session.add(user)
         db.session.commit()
-        login_user(user)
-        return redirect(url_for('index'))
+        if user.approved:
+            login_user(user)
+            return redirect(url_for('index'))
+        return render_template(
+            "register.html",
+            info="Je account is aangemaakt en wacht op goedkeuring door de beheerder. "
+                 "Je kunt inloggen zodra je account is goedgekeurd.",
+        )
     return render_template("register.html")
 
 
@@ -2541,12 +2564,18 @@ def profile():
         db.session.commit()
     result = {"name": current_user.name, "email": current_user.email, "phone": phone,
               "functie": functie, "is_admin": _is_admin(current_user)}
-    # Beheerders krijgen de lijst met collega's mee voor het reset-keuzemenu
+    # Beheerders krijgen de lijst met collega's mee voor het reset-keuzemenu,
+    # plus de nog niet goedgekeurde aanmeldingen om te accepteren.
     if _is_admin(current_user):
         others = User.query.order_by(User.name).all()
         result["accounts"] = [
             {"naam": u.name, "email": u.email}
             for u in others if u.id != current_user.id
+        ]
+        result["pending"] = [
+            {"naam": u.name, "email": u.email}
+            for u in others
+            if u.id != current_user.id and not getattr(u, "approved", True)
         ]
     return jsonify(result)
 
@@ -2570,6 +2599,24 @@ def admin_reset_password():
     user.set_password(new_password)
     db.session.commit()
     log.info("Wachtwoord gereset voor %s door beheerder %s", email, current_user.email)
+    return jsonify({"ok": True, "naam": user.name})
+
+
+@app.route("/api/admin/approve", methods=["POST"])
+@login_required
+def admin_approve():
+    """Alleen voor beheerders: keurt een wachtend account goed zodat de collega
+    kan inloggen en zoeken."""
+    if not _is_admin(current_user):
+        return jsonify({"error": "Geen rechten voor deze actie"}), 403
+    data = request.json or {}
+    email = (data.get("email") or "").strip().lower()
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify({"error": "Geen account gevonden met dit e-mailadres"}), 404
+    user.approved = True
+    db.session.commit()
+    log.info("Account goedgekeurd: %s door beheerder %s", email, current_user.email)
     return jsonify({"ok": True, "naam": user.name})
 
 

@@ -18,6 +18,7 @@
     .link { text-align: center; margin-top: 20px; font-size: 0.85rem; color: #666; }
     .link a { color: #2d6a4f; text-decoration: none; font-weight: 600; }
     .error { background: #fee2e2; color: #991b1b; padding: 10px 14px; border-radius: 8px; margin-bottom: 18px; font-size: 0.85rem; }
+    .info { background: #dcfce7; color: #166534; padding: 10px 14px; border-radius: 8px; margin-bottom: 18px; font-size: 0.85rem; line-height: 1.4; }
   </style>
 </head>
 <body>
@@ -25,6 +26,7 @@
     <h1>Account aanmaken</h1>
     <p class="sub">Maak een gratis account aan</p>
     {% if error %}<div class="error">{{ error }}</div>{% endif %}
+    {% if info %}<div class="info">{{ info }}</div>{% endif %}
     <form method="POST" action="/register">
       <label>Naam</label>
       <input type="text" name="name" placeholder="Jouw naam" required autofocus>

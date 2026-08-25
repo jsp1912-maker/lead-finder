@@ -731,6 +731,13 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--bg); color:var
     <div class="field" style="margin-bottom:14px"><label>Telefoonnummer</label><input id="prof-phone" placeholder="+31612345678"></div>
     <button class="btn-copy" style="background:#005826" onclick="saveProfile()">Opslaan</button>
 
+    <!-- Alleen zichtbaar voor beheerders: nieuwe aanmeldingen goedkeuren -->
+    <div id="admin-approve" style="display:none;margin-top:20px;padding-top:16px;border-top:1px solid var(--border2,#e2e8f0)">
+      <h4 style="margin:0 0 4px;font-size:0.95rem;color:var(--text)">Nieuwe aanmeldingen goedkeuren</h4>
+      <p style="font-size:0.8rem;color:#64748b;margin:0 0 10px">Deze mensen hebben een account aangemaakt en wachten op jouw goedkeuring. Pas na goedkeuring kunnen ze inloggen en zoeken.</p>
+      <div id="pending-list"></div>
+    </div>
+
     <!-- Alleen zichtbaar voor beheerders -->
     <div id="admin-reset" style="display:none;margin-top:20px;padding-top:16px;border-top:1px solid var(--border2,#e2e8f0)">
       <h4 style="margin:0 0 4px;font-size:0.95rem;color:var(--text)">Collega-wachtwoord resetten</h4>
@@ -1738,8 +1745,9 @@ async function openProfile() {
   document.getElementById('prof-email').value = p.email || '';
   document.getElementById('prof-functie').value = p.functie || '';
   document.getElementById('prof-phone').value = p.phone || '';
-  // Admin-blok alleen tonen voor beheerders; keuzemenu vullen met collega's
+  // Admin-blokken alleen tonen voor beheerders; keuzemenu vullen met collega's
   const adminBox = document.getElementById('admin-reset');
+  const approveBox = document.getElementById('admin-approve');
   if (p.is_admin) {
     const sel = document.getElementById('reset-email');
     sel.innerHTML = (p.accounts || [])
@@ -1747,10 +1755,47 @@ async function openProfile() {
       .join('');
     document.getElementById('reset-pw').value = '';
     adminBox.style.display = 'block';
+    renderPending(p.pending || []);
+    approveBox.style.display = 'block';
   } else {
     adminBox.style.display = 'none';
+    approveBox.style.display = 'none';
   }
   document.getElementById('modal-profile').classList.add('open');
+}
+
+// Toon de wachtende aanmeldingen met een goedkeurknop (alleen voor beheerders)
+function renderPending(list) {
+  const box = document.getElementById('pending-list');
+  if (!list.length) {
+    box.innerHTML = '<p style="font-size:0.82rem;color:#94a3b8;margin:0">Geen wachtende aanmeldingen.</p>';
+    return;
+  }
+  box.innerHTML = list.map(a => `
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border2,#eef2f7)">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:0.9rem;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(a.naam)}</div>
+        <div style="font-size:0.78rem;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(a.email)}</div>
+      </div>
+      <button class="btn-copy" type="button" style="background:#005826;flex-shrink:0" onclick="approveAccount('${esc(a.email)}', this)">Goedkeuren</button>
+    </div>`).join('');
+}
+
+async function approveAccount(email, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = '...'; }
+  const r = await fetch('/api/admin/approve', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({email})
+  });
+  const d = await r.json().catch(() => ({}));
+  if (r.ok) {
+    toast(`${d.naam || email} is goedgekeurd en kan nu inloggen`, '#005826');
+    openProfile();  // lijsten verversen
+  } else {
+    toast(d.error || 'Goedkeuren mislukt', '#ef4444');
+    if (btn) { btn.disabled = false; btn.textContent = 'Goedkeuren'; }
+  }
 }
 
 // Verzin een makkelijk door te geven tijdelijk wachtwoord
